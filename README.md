@@ -56,6 +56,7 @@ The system integrates a **Sensirion SEN55 environmental sensor** with an **ESP32
 - **Build System:** PlatformIO  
 - **Key Responsibilities:**
   - Sensor interfacing (I²C)
+  - Use UART for debugging
   - Data buffering and rolling averages
   - Feature extraction
   - AI-based calibration and classification
