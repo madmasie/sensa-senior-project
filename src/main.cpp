@@ -1,11 +1,18 @@
 #include <Arduino.h>
 
 #include "processing/pipeline.h"
-#include "sensor/mock_sensor.cpp"  // include the mock directly until the real driver exists
+#include "sensor/mock_sensor.h"
 
 // Use the mock sensor until the SEN55 driver is implemented.
 // To switch to the real sensor: replace MockSensor with Sen55Sensor here.
 static MockSensor sensor;
+
+// Non-blocking 1 Hz timer.
+// We store the last time we ran and compare against millis() each loop.
+// This avoids delay(), which blocks the CPU and prevents any other work
+// (e.g. BLE, power management) from running between samples.
+static uint32_t last_tick_ms = 0;
+static const uint32_t INTERVAL_MS = 1000;
 
 void setup() {
     Serial.begin(115200);
@@ -13,31 +20,21 @@ void setup() {
 }
 
 void loop() {
+    uint32_t now = millis();
+
+    // Unsigned subtraction handles the ~49-day millis() rollover correctly.
+    if (now - last_tick_ms < INTERVAL_MS) return;
+    last_tick_ms = now;
+
     Classification result = pipeline_tick();
 
-    // Print PM2.5 label to serial so we can verify the pipeline is working.
-    // Labels map to: 0=GOOD, 1=MODERATE, 2=UNHEALTHY, 3=VERY_UNHEALTHY, 4=HAZARDOUS, 255=UNKNOWN
     Serial.print("Classification: ");
     switch (result) {
-        case Classification::GOOD:
-            Serial.println("GOOD");
-            break;
-        case Classification::MODERATE:
-            Serial.println("MODERATE");
-            break;
-        case Classification::UNHEALTHY:
-            Serial.println("UNHEALTHY");
-            break;
-        case Classification::VERY_UNHEALTHY:
-            Serial.println("VERY_UNHEALTHY");
-            break;
-        case Classification::HAZARDOUS:
-            Serial.println("HAZARDOUS");
-            break;
-        default:
-            Serial.println("UNKNOWN");
-            break;
+        case Classification::GOOD:          Serial.println("GOOD");          break;
+        case Classification::MODERATE:      Serial.println("MODERATE");      break;
+        case Classification::UNHEALTHY:     Serial.println("UNHEALTHY");     break;
+        case Classification::VERY_UNHEALTHY:Serial.println("VERY_UNHEALTHY");break;
+        case Classification::HAZARDOUS:     Serial.println("HAZARDOUS");     break;
+        default:                            Serial.println("UNKNOWN");       break;
     }
-
-    delay(1000);  // 1 Hz sample rate
 }
