@@ -8,39 +8,13 @@ This project is built by a team of **electrical engineers**, not software engine
 
 ## Repo Structure
 ```
-src/
-  main.cpp                      # Entry point (setup/loop)
-  sensor/
-    sen55_sensor.cpp            # SEN55 I2C driver
-    mock_sensor.cpp             # Mock sensor for development/testing
-  processing/
-    buffer.cpp                  # (stub) Rolling sample buffer — logic lives in lib/
-    feature_extraction.cpp      # (stub) Feature extraction — logic lives in lib/
-    pipeline.cpp                # End-to-end processing pipeline
-    classify.cpp                # Air quality classification logic
-  ml/
-    calibrate.cpp               # On-device sensor calibration model
-include/
-  types.h                       # Shared types: Reading, Features, Classification
-  sensor/sensor.h
-  processing/
-    feature_extraction.h        # NOTE: named feature_extraction.h, NOT features.h
-    classify.h
-    pipeline.h
-  ml/
-    calibrate.h
-lib/
-  buffer/src/buffer.h           # RingBuffer<N> — portable, no Arduino dependency
-  features/src/
-    feature_extraction.h        # Feature extraction — portable, no Arduino dependency
-  classify/src/
-    classify.h                  # classify() — portable, no Arduino dependency
-    classify.cpp
-test/
-  native/
-    test_buffer/test_main.cpp   # GoogleTest suite for RingBuffer
-    test_feature_extraction/test_main.cpp # GoogleTest suite for feature extraction
-    test_classify/test_main.cpp # GoogleTest suite for classify()
+src/                            # Arduino firmware (ESP32 only)
+lib/                            # Portable logic — no Arduino dependency, unit tested
+  buffer/src/buffer.h           # RingBuffer<N>
+  features/src/feature_extraction.h  # extract_features()
+  classify/src/classify.h       # classify() — NOTE: never name any header features.h
+include/                        # Shared headers (types.h, sensor interface, etc.)
+test/native/                    # GoogleTest suites — run on host, no hardware needed
 ```
 
 ## Language & Toolchain
@@ -124,6 +98,9 @@ SEN55 read → preprocess (warm-up discard, outlier clamp, EMA smoothing, T/RH c
 ### Code Style
 - **All code must be commented.** The team are electrical engineers, not software engineers. Explain what each function does, what its parameters mean, and why non-obvious decisions were made.
 - Comments should be written for someone who understands circuits and signals but may not know C++ idioms or embedded patterns.
+
+### After Making Changes
+- **Always update `plans/implementation-plan.md`** to reflect what's been completed and what's next.
 
 ### When You Don't Know Something
 - **Do not guess or make assumptions** about library APIs, PlatformIO behavior, hardware specs, or toolchain details.
