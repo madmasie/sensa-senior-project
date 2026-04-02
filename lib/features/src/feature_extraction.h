@@ -1,8 +1,9 @@
 #pragma once
-#include <cstdint>
 #include <cmath>
-#include "types.h"
+#include <cstdint>
+
 #include "buffer.h"
+#include "types.h"
 
 /*
  * extract_features()
@@ -30,25 +31,25 @@ bool extract_features(const RingBuffer<N>& buf, FeatureVector& out) {
 
     // Record the time span of this window
     out.window_start_ms = buf[0].ts_ms;
-    out.window_end_ms   = buf[n - 1].ts_ms;
-    out.sample_count    = n;
+    out.window_end_ms = buf[n - 1].ts_ms;
+    out.sample_count = n;
 
     // --- Pass 1: compute means ---
     // Sum all values, then divide by count. Same as averaging a set of
     // voltage measurements on an oscilloscope.
     float sum_pm = 0, sum_temp = 0, sum_rh = 0, sum_voc = 0, sum_nox = 0;
     for (uint16_t i = 0; i < n; i++) {
-        sum_pm   += buf[i].pm2_5;
+        sum_pm += buf[i].pm2_5;
         sum_temp += buf[i].temp_c;
-        sum_rh   += buf[i].rh;
-        sum_voc  += buf[i].voc_index;
-        sum_nox  += buf[i].nox_index;
+        sum_rh += buf[i].rh;
+        sum_voc += buf[i].voc_index;
+        sum_nox += buf[i].nox_index;
     }
-    out.pm2_5_mean = sum_pm   / n;
-    out.temp_mean  = sum_temp / n;
-    out.rh_mean    = sum_rh   / n;
-    out.voc_mean   = sum_voc  / n;
-    out.nox_mean   = sum_nox  / n;
+    out.pm2_5_mean = sum_pm / n;
+    out.temp_mean = sum_temp / n;
+    out.rh_mean = sum_rh / n;
+    out.voc_mean = sum_voc / n;
+    out.nox_mean = sum_nox / n;
 
     // --- Pass 2: compute PM2.5 standard deviation ---
     // Std deviation measures how spread out the PM values are around the mean.

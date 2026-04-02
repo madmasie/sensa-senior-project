@@ -12,7 +12,7 @@
  * To implement a sensor, inherit from this class and override read().
  */
 class ISensor {
-public:
+   public:
     // Attempt to read one sample from the sensor.
     // Fills `out` with the latest values and returns true on success.
     // Returns false if the sensor is not ready or the read failed.

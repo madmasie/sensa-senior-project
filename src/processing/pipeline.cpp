@@ -1,6 +1,7 @@
 #include "processing/pipeline.h"
-#include "classify.h"
+
 #include "buffer.h"
+#include "classify.h"
 #include "feature_extraction.h"
 
 // Window size: 10 samples at 1 Hz = 10 seconds of data.

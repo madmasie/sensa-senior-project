@@ -9,21 +9,21 @@
  * (or a mock sensor during development).
  */
 struct Reading {
-  uint32_t ts_ms;   //timestamp (milliseconds since boot)
-  
-  //Particulate Matter (ug/m^3)
-  float pm1;
-  float pm2_5;
-  float pm4;
-  float pm10;
+    uint32_t ts_ms;  // timestamp (milliseconds since boot)
 
-  //Environmental Readings
-  float temp_c; //temp (C)
-  float rh;         //relative humidity (%)
+    // Particulate Matter (ug/m^3)
+    float pm1;
+    float pm2_5;
+    float pm4;
+    float pm10;
 
-  //Gas indicies
-  float voc_index;  //1-500
-  float nox_index;  //1-500
+    // Environmental Readings
+    float temp_c;  // temp (C)
+    float rh;      // relative humidity (%)
+
+    // Gas indicies
+    float voc_index;  // 1-500
+    float nox_index;  // 1-500
 };
 
 /*
@@ -32,13 +32,14 @@ struct Reading {
  * =========================
  * User-facing exposure level.
  */
-enum class Classification : uint8_t { 
-    GOOD = 0, 
-    MODERATE = 1, 
-    UNHEALTHY = 2, 
+enum class Classification : uint8_t {
+    GOOD = 0,
+    MODERATE = 1,
+    UNHEALTHY = 2,
     VERY_UNHEALTHY = 3,
     HAZARDOUS = 4,
-    UNKNOWN = 255 };
+    UNKNOWN = 255
+};
 
 /*
  * =========================
@@ -52,15 +53,15 @@ struct FeatureVector {
     uint32_t window_end_ms;
     uint16_t sample_count;
 
-    //PM2.5 statistics
+    // PM2.5 statistics
     float pm2_5_mean;
     float pm2_5_std;
 
-    //Environmental averages
+    // Environmental averages
     float temp_mean;
     float rh_mean;
 
-    //Gas averages
+    // Gas averages
     float voc_mean;
     float nox_mean;
 };

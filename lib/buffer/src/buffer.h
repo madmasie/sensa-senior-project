@@ -1,5 +1,6 @@
 #pragma once
 #include <cstdint>
+
 #include "types.h"
 
 /*
@@ -15,7 +16,7 @@
  */
 template <uint16_t N>
 class RingBuffer {
-public:
+   public:
     // Add a new reading to the buffer.
     // If the buffer is already full, the oldest reading is overwritten.
     void push(const Reading& r);
@@ -27,25 +28,28 @@ public:
     uint16_t count() const { return _count; }
 
     // Empties the buffer. Does not zero the memory, just resets the counters.
-    void clear() { _head = 0; _count = 0; }
+    void clear() {
+        _head = 0;
+        _count = 0;
+    }
 
     // Access readings in time order: index 0 = oldest, index count-1 = newest.
     // Use this to iterate over the window for feature extraction.
     const Reading& operator[](uint16_t i) const;
 
-private:
-    Reading  _buf[N];      // raw storage — fixed array, no heap allocation
-    uint16_t _head  = 0;   // index where the NEXT write will go
-    uint16_t _count = 0;   // how many valid readings are currently stored
+   private:
+    Reading _buf[N];      // raw storage — fixed array, no heap allocation
+    uint16_t _head = 0;   // index where the NEXT write will go
+    uint16_t _count = 0;  // how many valid readings are currently stored
 };
 
 // --- Implementation (must be in the header because this is a C++ template) ---
 
 template <uint16_t N>
 void RingBuffer<N>::push(const Reading& r) {
-    _buf[_head] = r;                    // write at current head position
-    _head = (_head + 1) % N;           // advance head, wrapping around at N
-    if (_count < N) _count++;           // only increment count until buffer is full
+    _buf[_head] = r;           // write at current head position
+    _head = (_head + 1) % N;   // advance head, wrapping around at N
+    if (_count < N) _count++;  // only increment count until buffer is full
 }
 
 template <uint16_t N>
