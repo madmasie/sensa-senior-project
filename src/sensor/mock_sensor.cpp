@@ -1,6 +1,19 @@
 #include "sensor/sensor.h"
 #include "types.h"
-#include <Arduino.h>
+
+// millis() is an Arduino built-in. On the host (native unit-test build) it
+// doesn't exist, so we provide a simple stub using the C standard library.
+#ifdef ARDUINO
+  #include <Arduino.h>
+#else
+  #include <cstdint>
+  #include <ctime>
+  static uint32_t millis() {
+      struct timespec ts;
+      clock_gettime(CLOCK_MONOTONIC, &ts);
+      return (uint32_t)(ts.tv_sec * 1000 + ts.tv_nsec / 1000000);
+  }
+#endif
 
 /*
  * MockSensor

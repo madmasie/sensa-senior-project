@@ -1,0 +1,33 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Cache the PlatformIO toolchains and library downloads so subsequent
+      # runs don't re-download the entire ESP32 toolchain (~500 MB).
+      - name: Cache PlatformIO
+        uses: actions/cache@v4
+        with:
+          path: ~/.platformio
+          key: pio-${{ hashFiles('platformio.ini') }}
+
+      - name: Install PlatformIO
+        run: pip install platformio
+
+      # Compile firmware for the ESP32-S3 target.
+      # This catches any Arduino/hardware-layer compilation errors.
+      - name: Build ESP32 firmware
+        run: pio run -e rymcu-esp32-s3-devkitc-1
+
+      # Run GoogleTest unit tests on the host (no hardware needed).
+      # Tests live in test/native/ and cover lib/ portable logic.
+      - name: Run unit tests
+        run: pio test -e native
