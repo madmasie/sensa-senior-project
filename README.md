@@ -48,7 +48,19 @@ The system integrates a **Sensirion SEN55 environmental sensor** with an **ESP32
 
 ---
 
-## Software Stack
+## Running Tests
+
+Unit tests run on your PC (no hardware needed) using GoogleTest via PlatformIO's native environment.
+
+```bash
+~/.platformio/penv/bin/pio test -e native
+```
+
+Tests live in `test/native/`. Each subdirectory is an independent test suite:
+- `test_buffer/` — tests for the ring buffer
+- `test_feature_extraction/` — tests for feature extraction
+
+To add a new test suite, create `test/native/test_<name>/test_main.cpp` and follow the pattern in an existing test file.
 
 ### Firmware
 - **Language:** C++  
