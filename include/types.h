@@ -56,6 +56,11 @@ struct FeatureVector {
     // PM2.5 statistics
     float pm2_5_mean;
     float pm2_5_std;
+    float pm2_5_min;           // lowest value in the window
+    float pm2_5_max;           // highest value in the window
+    float pm2_5_slope;         // linear trend in µg/m³ per second (positive = rising)
+    float pm2_5_pct_above_35;  // fraction of samples above 35.5 µg/m³ (0.0–1.0)
+    float pm2_5_autocorr;      // lag-1 autocorrelation (how much each sample predicts the next)
 
     // Environmental averages
     float temp_mean;
