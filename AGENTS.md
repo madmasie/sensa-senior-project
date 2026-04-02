@@ -15,7 +15,7 @@ src/
     mock_sensor.cpp             # Mock sensor for development/testing
   processing/
     buffer.cpp                  # (stub) Rolling sample buffer — logic lives in lib/
-    features.cpp                # (stub) Feature extraction — logic lives in lib/
+    feature_extraction.cpp      # (stub) Feature extraction — logic lives in lib/
     pipeline.cpp                # End-to-end processing pipeline
     classify.cpp                # Air quality classification logic
   ml/
@@ -33,11 +33,14 @@ lib/
   buffer/src/buffer.h           # RingBuffer<N> — portable, no Arduino dependency
   features/src/
     feature_extraction.h        # Feature extraction — portable, no Arduino dependency
+  classify/src/
+    classify.h                  # classify() — portable, no Arduino dependency
+    classify.cpp
 test/
   native/
-    unity_config.h              # GCC 13 fix: pre-includes <features.h> before Unity
     test_buffer/test_main.cpp   # GoogleTest suite for RingBuffer
     test_feature_extraction/test_main.cpp # GoogleTest suite for feature extraction
+    test_classify/test_main.cpp # GoogleTest suite for classify()
 ```
 
 ## Language & Toolchain
@@ -50,7 +53,7 @@ test/
 
 ## Key Types (include/types.h)
 - `Reading` — raw timestamped sensor sample (PM1/2.5/4/10, temp, RH, VOC, NOx)
-- `Features` — aggregated statistics over a rolling window (~20–30 features)
+- `FeatureVector` — aggregated statistics over a rolling window (~20–30 features)
 - `Classification` — enum: GOOD, MODERATE, UNHEALTHY, VERY_UNHEALTHY, HAZARDOUS, UNKNOWN
 
 ## AQI Classification Thresholds (PM2.5 µg/m³)

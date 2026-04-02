@@ -1,0 +1,39 @@
+#include "sensor/sensor.h"
+#include "types.h"
+#include <Arduino.h>
+
+/*
+ * MockSensor
+ * Returns fake but realistic Reading values so the full pipeline can be tested
+ * on the ESP32 without the SEN55 physically connected.
+ *
+ * PM2.5 slowly oscillates between ~5 and ~40 µg/m³ to exercise multiple
+ * classification thresholds during a normal test run.
+ */
+class MockSensor : public ISensor {
+public:
+    bool read(Reading& out) override {
+        // millis() returns milliseconds since boot — used as the timestamp
+        out.ts_ms = millis();
+
+        // Slowly vary PM2.5 using a counter so we cross classification boundaries
+        // over time. Increments by 0.5 each call, wraps at 40.
+        _pm2_5 += 0.5f;
+        if (_pm2_5 > 40.0f) _pm2_5 = 5.0f;
+
+        out.pm1   = _pm2_5 * 0.7f;
+        out.pm2_5 = _pm2_5;
+        out.pm4   = _pm2_5 * 1.2f;
+        out.pm10  = _pm2_5 * 1.5f;
+
+        out.temp_c    = 22.0f;
+        out.rh        = 50.0f;
+        out.voc_index = 100.0f;
+        out.nox_index = 10.0f;
+
+        return true;
+    }
+
+private:
+    float _pm2_5 = 5.0f;  // starting PM2.5 value
+};

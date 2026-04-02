@@ -12,7 +12,7 @@ A wearable air-quality monitor that:
 ## Phase 1 — Scope & Hardware
 - **Sensor:** Sensirion SEN55 (PM + VOC/NOx + T/RH, all-in-one)
 - **MCU:** ESP32-S3 (TFLite Micro, FreeRTOS, BLE, OTA)
-- **Battery:** 500–2000 mAh LiPo + charger IC
+- **Battery:** 2000 mAh LiPo + charger IC
 - **AI constraints:**
   - Sample rate: 1–2 Hz; window: 5–10 s; overlap: 50%
   - Feature set: ~20–30 features/window

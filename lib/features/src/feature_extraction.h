@@ -6,7 +6,7 @@
 
 /*
  * extract_features()
- * Computes a Features struct from the readings currently stored in a RingBuffer.
+ * Computes a FeatureVector from the readings currently stored in a RingBuffer.
  *
  * This is the "signal processing" step of the pipeline. Instead of feeding raw
  * sensor samples directly into the ML model, we summarize the window with
@@ -15,7 +15,7 @@
  *
  * Parameters:
  *   buf  — the ring buffer holding the current window of readings
- *   out  — the Features struct to fill in (passed by reference, modified in place)
+ *   out  — the FeatureVector to fill in (passed by reference, modified in place)
  *
  * Returns true on success, false if the buffer has fewer than 2 samples
  * (need at least 2 to compute meaningful statistics).
@@ -24,7 +24,7 @@
  * The compiler generates the actual code when you call it with a specific N.
  */
 template <uint16_t N>
-bool extract_features(const RingBuffer<N>& buf, Features& out) {
+bool extract_features(const RingBuffer<N>& buf, FeatureVector& out) {
     uint16_t n = buf.count();
     if (n < 2) return false;  // not enough data yet
 

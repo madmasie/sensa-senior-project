@@ -47,7 +47,7 @@ enum class Classification : uint8_t {
  * Aggregated statistics over a rolling window
  * (ex:, 60 seconds of 1 Hz data).
  */
-struct Features {
+struct FeatureVector {
     uint32_t window_start_ms;
     uint32_t window_end_ms;
     uint16_t sample_count;

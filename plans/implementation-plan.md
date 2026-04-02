@@ -35,7 +35,7 @@ _Ordered by dependency. Each item lists what needs to exist before you can start
 
 ## 4. Classification — `src/processing/classify.cpp`
 **Depends on:** `include/types.h` (done), `include/processing/classify.h`  
-**What it does:** Maps a `Features` struct to a `Classification` enum using PM2.5 thresholds.  
+**What it does:** Maps a `FeatureVector` struct to a `Classification` enum using PM2.5 thresholds.  
 **What to implement:**
 - Threshold-based rules using AQI breakpoints from `docs/customer-specs.md`
 - This is the baseline model — no ML needed yet
