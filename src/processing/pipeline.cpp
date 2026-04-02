@@ -1,5 +1,5 @@
 #include "processing/pipeline.h"
-#include "processing/classify.h"
+#include "classify.h"
 #include "buffer.h"
 #include "feature_extraction.h"
 
