@@ -1,0 +1,6 @@
+# Normalize all text files to LF on commit, regardless of contributor OS.
+# This prevents CRLF line endings from Windows editors sneaking into the repo.
+* text=auto eol=lf
+*.h text eol=lf
+*.cpp text eol=lf
+*.c text eol=lf
