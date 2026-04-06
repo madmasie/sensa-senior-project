@@ -14,18 +14,37 @@ static MockSensor sensor;
 static uint32_t last_tick_ms = 0;
 static const uint32_t INTERVAL_MS = 1000;
 
+// Standard pin for the RGB LED on ESP32-S3-DevKitC-1
+#define RGB_LED_PIN 38
+
 void setup() {
     Serial.begin(115200);
     pipeline_init(&sensor);
 }
 
 void loop() {
+    // Three fast blinks (Color: Green)
+    for (int i = 0; i < 3; i++) {
+        // neopixelWrite(pin, red, green, blue) - values from 0 to 255
+        // digitalWrite(RGB_LED_PIN, HIGH);
+        neopixelWrite(RGB_LED_PIN, 0, 64, 0); 
+        delay(100);
+        
+        // Turn off
+        // digitalWrite(RGB_LED_PIN, LOW);
+        neopixelWrite(RGB_LED_PIN, 0, 0, 0);  
+        delay(100);
+    }
+    
+    // One long pause to create the asymmetrical pattern
+    delay(1000);
+    Serial.println("Hello world");
     uint32_t now = millis();
 
     // Unsigned subtraction handles the ~49-day millis() rollover correctly.
     if (now - last_tick_ms < INTERVAL_MS) return;
     last_tick_ms = now;
-
+    
     Classification result = pipeline_tick();
 
     Serial.print("Classification: ");
