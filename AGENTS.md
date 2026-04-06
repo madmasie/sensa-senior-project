@@ -102,3 +102,4 @@ SEN55 read → preprocess (warm-up discard, outlier clamp, EMA smoothing, T/RH c
 - Instead, **provide a ready-to-use ChatGPT prompt** that the team can paste to get a verified answer, then wait for the result before proceeding.
 - Format the prompt clearly so it includes: the platform/toolchain version, the exact error or question, and what a good answer should address.
 - This strategy has already been used successfully in this project for PlatformIO + GCC 13 unit testing issues.
+
