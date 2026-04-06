@@ -2,6 +2,7 @@
 #include <cmath>
 #include <cstdint>
 
+#include "aqi_thresholds.h"
 #include "buffer.h"
 #include "types.h"
 
@@ -47,7 +48,7 @@ bool extract_features(const RingBuffer<N>& buf, FeatureVector& out) {
         sum_nox += buf[i].nox_index;
         if (v < mn) mn = v;
         if (v > mx) mx = v;
-        if (v > 35.5f) above35++;
+        if (v > AQI_PM25_UNHEALTHY_MIN) above35++;
     }
     out.pm2_5_mean = sum_pm / n;
     out.pm2_5_min = mn;

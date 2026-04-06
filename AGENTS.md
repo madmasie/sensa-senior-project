@@ -31,13 +31,8 @@ test/native/                    # GoogleTest suites — run on host, no hardware
 - `Classification` — enum: GOOD, MODERATE, UNHEALTHY, VERY_UNHEALTHY, HAZARDOUS, UNKNOWN
 
 ## AQI Classification Thresholds (PM2.5 µg/m³)
-| Class          | Range (µg/m³) |
-|----------------|---------------|
-| GOOD           | 0 – 9.0       |
-| MODERATE       | 9.1 – 35.4    |
-| UNHEALTHY      | 35.5 – 125.4  |
-| VERY_UNHEALTHY | 125.5 – 225.4 |
-| HAZARDOUS      | 225.5+        |
+Thresholds are defined as named constants in `include/aqi_thresholds.h` — do not use magic numbers in code.
+See that file for values and the EPA source reference.
 
 ## AI / ML Constraints
 - Sample rate: 1–2 Hz; window: 5–10 s; overlap: 50%
