@@ -16,20 +16,8 @@ _Ordered by dependency. Each item lists what needs to exist before you can start
 | Classification | `lib/classify/src/classify.cpp` | Threshold-based, tested |
 | Pipeline | `src/processing/pipeline.cpp` | `pipeline_init()` / `pipeline_tick()` |
 | Main loop | `src/main.cpp` | 1 Hz serial output via mock sensor |
-
----
-
-## 2. SEN55 Sensor Driver — `src/sensor/sen55_sensor.cpp`
-**Depends on:** `include/sensor/sensor.h` (done), SEN55 physically wired  
-**What it does:** Reads real PM, VOC, NOx, T/RH values from the SEN55 over I2C.  
-**What to implement:**
-- Subclass `ISensor`; implement `read(Reading& out) -> bool`
-- I2C init (address 0x69, 100 kbit/s)
-- Start measurement command
-- Read measurement command → populate a `Reading` struct
-- Warm-up discard (first 30–60 s of readings are unreliable)
-- Reference: [Sensirion embedded-i2c-sen5x driver](https://github.com/Sensirion/embedded-i2c-sen5x)
-- Swap `MockSensor` for `Sen55Sensor` in `main.cpp` once working
+| SEN55 sensor driver | `src/sensor/sen55_sensor.cpp` | Real hardware, I2C confirmed working at 0x69 |
+| End-to-end hardware validation | `src/main.cpp` | Classification printing correctly after warm-up; raw sensor values logged each tick |
 
 ---
 

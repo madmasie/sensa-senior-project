@@ -16,7 +16,6 @@
  */
 
 // Upper bound of GOOD range (inclusive)
-//TESTIng
 
 constexpr float AQI_PM25_GOOD_MAX         =   9.0f;
 

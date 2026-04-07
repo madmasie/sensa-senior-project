@@ -1,11 +1,12 @@
 #include <Arduino.h>
 
 #include "processing/pipeline.h"
-#include "sensor/mock_sensor.h"
+#include "sensor/sen55_sensor.h"
 
-// Use the mock sensor until the SEN55 driver is implemented.
-// To switch to the real sensor: replace MockSensor with Sen55Sensor here.
-static MockSensor sensor;
+// Real SEN55 sensor on SDA=8, SCL=9.
+// To revert to the mock sensor: swap Sen55Sensor for MockSensor
+// and include "sensor/mock_sensor.h" instead.
+static Sen55Sensor sensor;
 
 // Non-blocking 1 Hz timer.
 // We store the last time we ran and compare against millis() each loop.
@@ -19,6 +20,14 @@ static const uint32_t INTERVAL_MS = 1000;
 
 void setup() {
     Serial.begin(115200);
+    // On ESP32-S3 with USB-JTAG, Serial is USB CDC — wait up to 3 s for the
+    // host (PC) to open the port, otherwise the first messages are lost.
+    unsigned long t = millis();
+    while (!Serial && (millis() - t) < 3000);
+
+    if (!sensor.begin()) {
+        Serial.println("ERROR: SEN55 failed to start. Check wiring (SDA=8, SCL=9).");
+    }
     pipeline_init(&sensor);
 }
 
@@ -38,13 +47,12 @@ void loop() {
     
     // One long pause to create the asymmetrical pattern
     delay(1000);
-    Serial.println("Hello world");
     uint32_t now = millis();
 
     // Unsigned subtraction handles the ~49-day millis() rollover correctly.
     if (now - last_tick_ms < INTERVAL_MS) return;
     last_tick_ms = now;
-    
+
     Classification result = pipeline_tick();
 
     Serial.print("Classification: ");

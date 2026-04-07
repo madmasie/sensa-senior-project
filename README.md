@@ -48,7 +48,54 @@ The system integrates a **Sensirion SEN55 environmental sensor** with an **ESP32
 
 ---
 
-## Running Tests
+## Flashing from WSL (Windows + WSL2)
+
+WSL2 can't access USB devices directly — you need to forward the ESP32's USB port from Windows into WSL using **usbipd**.
+
+**One-time setup (Windows, run as Administrator):**
+```powershell
+winget install usbipd
+```
+
+**Every time you plug in the ESP32:**
+
+1. In PowerShell (as Administrator), find the ESP32's bus ID:
+   ```powershell
+   usbipd list
+   ```
+   Look for something like `USB Serial` or `CP210x` or `USB JTAG`.
+
+2. Bind it (one-time per device):
+   ```powershell
+   usbipd bind --busid <BUSID>
+   ```
+
+3. Attach it to WSL:
+   ```powershell
+   usbipd attach --wsl --busid <BUSID>
+   ```
+
+4. In WSL, verify it shows up:
+   ```bash
+   ls /dev/ttyUSB* /dev/ttyACM*
+   ```
+   You should see something like `/dev/ttyACM0`.
+
+5. If you get a permission denied error on the port:
+   ```bash
+   sudo chmod 666 /dev/ttyACM0
+   ```
+
+Now `pio run --target upload` and `pio device monitor` will work normally from WSL.
+
+**To detach when done** (PowerShell):
+```powershell
+usbipd detach --busid <BUSID>
+```
+
+---
+
+
 
 Unit tests run on your PC (no hardware needed) using GoogleTest via PlatformIO's native environment.
 
