@@ -1,11 +1,20 @@
 import { useSensa } from "./ble/useSensa";
+import { useDemo } from "./ble/useDemo";
 import { AqiBadge } from "./components/AqiBadge";
 import { MetricCard } from "./components/MetricCard";
 import { PMChart } from "./components/PMChart";
 import "./App.css";
 
 export default function App() {
-  const { state, connect, disconnect } = useSensa();
+  const ble  = useSensa();
+  const demo = useDemo();
+
+  // Use demo state when demo is active, otherwise BLE state
+  const isDemo = demo.state.connected;
+  const { state, connect, disconnect } = isDemo
+    ? { state: demo.state, connect: demo.startDemo, disconnect: demo.stopDemo }
+    : ble;
+
   const { connected, label, latest, history } = state;
 
   const fmt = (v: number | undefined, decimals = 1) =>
@@ -22,6 +31,16 @@ export default function App() {
         >
           {connected ? "Disconnect" : "Connect via Bluetooth"}
         </button>
+        {!isDemo && !ble.state.connected && (
+          <button className="btn btn-demo" onClick={demo.startDemo}>
+            Demo
+          </button>
+        )}
+        {isDemo && (
+          <button className="btn btn-disconnect" onClick={demo.stopDemo}>
+            Stop Demo
+          </button>
+        )}
         {connected && <span className="status-dot" title="Connected" />}
       </header>
 

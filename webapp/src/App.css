@@ -38,6 +38,7 @@
 
 .btn-connect    { background: var(--accent); color: #fff; }
 .btn-disconnect { background: var(--border); color: var(--text-h); }
+.btn-demo       { background: var(--accent-bg); color: var(--accent); border: 1px solid var(--accent-border); }
 
 .status-dot {
   width: 10px;
