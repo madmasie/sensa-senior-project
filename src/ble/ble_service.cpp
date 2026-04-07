@@ -1,6 +1,7 @@
 #include "ble/ble_service.h"
 
 #include <Arduino.h>
+#include <BLE2902.h>
 #include <BLECharacteristic.h>
 #include <BLEDevice.h>
 #include <BLEServer.h>
@@ -50,12 +51,16 @@ void ble_init() {
         CHAR_UUID_PM25,
         BLECharacteristic::PROPERTY_READ | BLECharacteristic::PROPERTY_NOTIFY
     );
+    // BLE2902 is the standard CCCD descriptor — without it, clients can't
+    // enable notifications (they get "Write Not Permitted" when trying to subscribe).
+    s_pm25_char->addDescriptor(new BLE2902());
 
     // Classification label characteristic — same pattern as PM2.5.
     s_label_char = service->createCharacteristic(
         CHAR_UUID_LABEL,
         BLECharacteristic::PROPERTY_READ | BLECharacteristic::PROPERTY_NOTIFY
     );
+    s_label_char->addDescriptor(new BLE2902());
 
     // Start the service, then begin advertising so clients can find the device.
     service->start();
