@@ -22,3 +22,11 @@ void pipeline_init(ISensor* sensor);
  * Returns the current Classification, or UNKNOWN if the buffer isn't full yet.
  */
 Classification pipeline_tick();
+
+/*
+ * pipeline_last_reading()
+ * Returns the most recent Reading accepted by the pipeline (post warm-up).
+ * Useful for forwarding raw values (e.g. PM2.5) over BLE alongside the classification.
+ * Returns a zeroed Reading if no valid sample has been received yet.
+ */
+Reading pipeline_last_reading();

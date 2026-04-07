@@ -18,6 +18,7 @@ _Ordered by dependency. Each item lists what needs to exist before you can start
 | Main loop | `src/main.cpp` | 1 Hz serial output via mock sensor |
 | SEN55 sensor driver | `src/sensor/sen55_sensor.cpp` | Real hardware, I2C confirmed working at 0x69 |
 | End-to-end hardware validation | `src/main.cpp` | Classification printing correctly after warm-up; raw sensor values logged each tick |
+| BLE GATT service | `src/ble/ble_service.cpp` | Advertises as "Sensa"; notifies PM2.5 (float) and classification label (uint8) on each tick |
 
 ---
 
@@ -25,8 +26,9 @@ _Ordered by dependency. Each item lists what needs to exist before you can start
 **Depends on:** pipeline (done), working hardware  
 **What it does:** Broadcasts PM readings and classification label over Bluetooth to a phone/PC.  
 **What to implement:**
-- BLE service with characteristics for PM2.5, class label, battery, config
-- Notify on new classification result
+- ~~BLE service with characteristics for PM2.5, class label, battery, config~~ ✅ PM2.5 + label done
+- Battery level characteristic
+- Config characteristic (sampling rate, window length)
 - Replace `delay(1000)` in `main.cpp` with non-blocking timer once BLE is added
 
 ---

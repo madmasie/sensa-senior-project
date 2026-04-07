@@ -1,5 +1,6 @@
 #include <Arduino.h>
 
+#include "ble/ble_service.h"
 #include "processing/pipeline.h"
 #include "sensor/sen55_sensor.h"
 
@@ -29,6 +30,7 @@ void setup() {
         Serial.println("ERROR: SEN55 failed to start. Check wiring (SDA=8, SCL=9).");
     }
     pipeline_init(&sensor);
+    ble_init();
 }
 
 void loop() {
@@ -54,6 +56,7 @@ void loop() {
     last_tick_ms = now;
 
     Classification result = pipeline_tick();
+    ble_notify(pipeline_last_reading().pm2_5, result);
 
     Serial.print("Classification: ");
     switch (result) {
