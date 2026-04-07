@@ -2,29 +2,29 @@
   background: var(--code-bg);
   border: 1px solid var(--border);
   border-radius: 12px;
-  padding: 20px 24px;
+  padding: 12px 16px;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 4px;
   text-align: left;
 }
 
 .label {
-  font-size: 0.8rem;
+  font-size: 0.75rem;
   text-transform: uppercase;
   letter-spacing: 0.08em;
   color: var(--text);
 }
 
 .value {
-  font-size: 2rem;
+  font-size: 1.6rem;
   font-weight: 600;
   color: var(--text-h);
   line-height: 1;
 }
 
 .unit {
-  font-size: 1rem;
+  font-size: 0.9rem;
   font-weight: 400;
   color: var(--text);
   margin-left: 4px;

@@ -30,7 +30,7 @@ export function PMChart({ history, title, dataKey, unit, color = "#a855f7", show
   return (
     <div className={styles.container}>
       <div className={styles.title}>{title}</div>
-      <ResponsiveContainer width="100%" height={200}>
+      <ResponsiveContainer width="100%" height={150}>
         <LineChart data={data} margin={{ top: 8, right: 16, left: 0, bottom: 0 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
           <XAxis dataKey="time" tick={{ fontSize: 11 }} interval="preserveStartEnd" />

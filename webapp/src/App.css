@@ -1,8 +1,8 @@
 .app {
-  padding: 32px 24px;
+  padding: 16px 24px;
   display: flex;
   flex-direction: column;
-  gap: 32px;
+  gap: 16px;
   text-align: left;
 }
 
@@ -15,7 +15,8 @@
 
 .header h1 {
   margin: 0;
-  font-size: 2rem;
+  font-size: 1.6rem;
+  letter-spacing: -0.5px;
 }
 
 .subtitle {
@@ -48,14 +49,18 @@
 
 .grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-  gap: 16px;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 10px;
 }
 
 .charts {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+}
+
+@media (max-width: 700px) {
+  .charts { grid-template-columns: 1fr; }
 }
 
 .hint {
