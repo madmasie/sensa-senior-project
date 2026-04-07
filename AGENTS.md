@@ -15,6 +15,10 @@ lib/                            # Portable logic — no Arduino dependency, unit
   classify/src/classify.h       # classify() — NOTE: never name any header features.h
 include/                        # Shared headers (types.h, sensor interface, etc.)
 test/native/                    # GoogleTest suites — run on host, no hardware needed
+webapp/                         # React + TypeScript web dashboard (Vite)
+  src/ble/useSensa.ts           # Web Bluetooth hook — all BLE logic
+  src/components/               # MetricCard, AqiBadge, PMChart
+tools/                          # Python BLE client (legacy)
 ```
 
 ## Language & Toolchain
@@ -51,7 +55,11 @@ SEN55 read → preprocess (warm-up discard, outlier clamp, EMA smoothing, T/RH c
 ```
 
 ## BLE / Communication
-- BLE GATT service exposes: PM readings, classification label, battery level, config (sampling rate, window length)
+- BLE GATT service exposes three characteristics:
+  - `...26a8` — PM2.5 float (kept for Python client backwards compat)
+  - `...26a9` — classification label (uint8)
+  - `...26aa` — full `Reading` struct as a packed 36-byte payload: `uint32 ts_ms` + 8× `float32` (pm1, pm2_5, pm4, pm10, temp_c, rh, voc_index, nox_index), all little-endian
+- Web dashboard in `webapp/` connects via Web Bluetooth (Chrome/Edge only); unpacks `...26aa` using `DataView`
 - For early development: stream raw data to PC via serial monitor before BLE integration
 
 ## Power / Battery

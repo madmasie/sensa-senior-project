@@ -97,6 +97,27 @@ usbipd detach --busid <BUSID>
 
 
 
+## Web Dashboard
+
+A browser-based dashboard lives in `webapp/`. It connects directly to the ESP32 over **Web Bluetooth** (no drivers, no Python) and displays live readings and charts for all sensor fields.
+
+**Requirements:** Chrome or Edge (Web Bluetooth is not supported in Firefox or Safari).
+
+```bash
+cd webapp
+npm install
+npm run dev   # opens at http://localhost:5173
+```
+
+The dashboard subscribes to three BLE characteristics:
+- `...26a8` — PM2.5 float (kept for Python client compat)
+- `...26a9` — classification label (uint8)
+- `...26aa` — full `Reading` struct as a packed 36-byte payload (all PM, temp, RH, VOC, NOx fields)
+
+---
+
+## Unit Tests
+
 Unit tests run on your PC (no hardware needed) using GoogleTest via PlatformIO's native environment.
 
 ```bash

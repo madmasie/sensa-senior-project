@@ -6,7 +6,10 @@ import "./App.css";
 
 export default function App() {
   const { state, connect, disconnect } = useSensa();
-  const { connected, pm25, label, history } = state;
+  const { connected, label, latest, history } = state;
+
+  const fmt = (v: number | undefined, decimals = 1) =>
+    v !== undefined ? v.toFixed(decimals) : null;
 
   return (
     <div className="app">
@@ -23,27 +26,26 @@ export default function App() {
       </header>
 
       <section className="grid">
-        <MetricCard label="PM2.5" value={pm25 !== null ? pm25.toFixed(1) : null} unit="µg/m³">
+        <MetricCard label="PM2.5" value={fmt(latest?.pm25)} unit="µg/m³">
           <AqiBadge label={label} />
         </MetricCard>
-
-        {/* Placeholder cards — wire up when firmware exposes more characteristics */}
-        <MetricCard label="PM1.0"  value={null} unit="µg/m³" />
-        <MetricCard label="PM4.0"  value={null} unit="µg/m³" />
-        <MetricCard label="PM10"   value={null} unit="µg/m³" />
-        <MetricCard label="VOC Index"  value={null} />
-        <MetricCard label="NOx Index"  value={null} />
-        <MetricCard label="Temperature" value={null} unit="°C" />
-        <MetricCard label="Humidity"    value={null} unit="%" />
+        <MetricCard label="PM1.0"  value={fmt(latest?.pm1)}   unit="µg/m³" />
+        <MetricCard label="PM4.0"  value={fmt(latest?.pm4)}   unit="µg/m³" />
+        <MetricCard label="PM10"   value={fmt(latest?.pm10)}  unit="µg/m³" />
+        <MetricCard label="VOC Index"   value={fmt(latest?.voc, 0)} />
+        <MetricCard label="NOx Index"   value={fmt(latest?.nox, 0)} />
+        <MetricCard label="Temperature" value={fmt(latest?.tempC)} unit="°C" />
+        <MetricCard label="Humidity"    value={fmt(latest?.rh)}    unit="%" />
       </section>
 
       <section className="charts">
-        <PMChart
-          history={history}
-          title="PM2.5 over time"
-          dataKey="pm25"
-          unit="µg/m³"
-        />
+        <PMChart history={history} title="PM2.5" dataKey="pm25" unit="µg/m³" showBreakpoints color="#a855f7" />
+        <PMChart history={history} title="PM1.0" dataKey="pm1"  unit="µg/m³" color="#6366f1" />
+        <PMChart history={history} title="PM10"  dataKey="pm10" unit="µg/m³" color="#ec4899" />
+        <PMChart history={history} title="VOC Index" dataKey="voc" unit="" color="#f59e0b" />
+        <PMChart history={history} title="NOx Index" dataKey="nox" unit="" color="#ef4444" />
+        <PMChart history={history} title="Temperature" dataKey="tempC" unit="°C" color="#22c55e" />
+        <PMChart history={history} title="Humidity"    dataKey="rh"    unit="%" color="#38bdf8" />
       </section>
 
       {!connected && (

@@ -10,13 +10,15 @@
 // UUIDs identify this service and its characteristics to BLE clients.
 // These are randomly generated — they just need to be unique and consistent
 // between the firmware and whatever app reads them.
-#define SERVICE_UUID        "4fafc201-1fb5-459e-8fcc-c5c9c331914b"
-#define CHAR_UUID_PM25      "beb5483e-36e1-4688-b7f5-ea07361b26a8"
-#define CHAR_UUID_LABEL     "beb5483e-36e1-4688-b7f5-ea07361b26a9"
+#define SERVICE_UUID         "4fafc201-1fb5-459e-8fcc-c5c9c331914b"
+#define CHAR_UUID_PM25       "beb5483e-36e1-4688-b7f5-ea07361b26a8"
+#define CHAR_UUID_LABEL      "beb5483e-36e1-4688-b7f5-ea07361b26a9"
+#define CHAR_UUID_READING    "beb5483e-36e1-4688-b7f5-ea07361b26aa"
 
-// Pointers to the two characteristics so ble_notify() can update them later.
-static BLECharacteristic* s_pm25_char  = nullptr;
-static BLECharacteristic* s_label_char = nullptr;
+// Pointers to characteristics so ble_notify() can update them later.
+static BLECharacteristic* s_pm25_char    = nullptr;
+static BLECharacteristic* s_label_char   = nullptr;
+static BLECharacteristic* s_reading_char = nullptr;
 
 // Tracks whether a client is currently connected.
 // We only bother sending notifications when someone is listening.
@@ -45,22 +47,28 @@ void ble_init() {
     // Create the Air Quality service.
     BLEService* service = server->createService(SERVICE_UUID);
 
-    // PM2.5 characteristic — clients can subscribe to receive updates (NOTIFY).
-    // READ allows a client to poll the value without waiting for a notification.
+    // PM2.5 characteristic — kept for backwards compatibility with the Python client.
     s_pm25_char = service->createCharacteristic(
         CHAR_UUID_PM25,
         BLECharacteristic::PROPERTY_READ | BLECharacteristic::PROPERTY_NOTIFY
     );
-    // BLE2902 is the standard CCCD descriptor — without it, clients can't
-    // enable notifications (they get "Write Not Permitted" when trying to subscribe).
     s_pm25_char->addDescriptor(new BLE2902());
 
-    // Classification label characteristic — same pattern as PM2.5.
+    // Classification label characteristic.
     s_label_char = service->createCharacteristic(
         CHAR_UUID_LABEL,
         BLECharacteristic::PROPERTY_READ | BLECharacteristic::PROPERTY_NOTIFY
     );
     s_label_char->addDescriptor(new BLE2902());
+
+    // Full Reading characteristic — sends all sensor fields as a packed 36-byte payload.
+    // Layout: uint32 ts_ms, then 8x float (pm1, pm2_5, pm4, pm10, temp_c, rh, voc, nox).
+    // The web app unpacks these bytes using a DataView with little-endian offsets.
+    s_reading_char = service->createCharacteristic(
+        CHAR_UUID_READING,
+        BLECharacteristic::PROPERTY_READ | BLECharacteristic::PROPERTY_NOTIFY
+    );
+    s_reading_char->addDescriptor(new BLE2902());
 
     // Start the service, then begin advertising so clients can find the device.
     service->start();
@@ -69,17 +77,31 @@ void ble_init() {
     Serial.println("[BLE] Advertising as 'Sensa'.");
 }
 
-void ble_notify(float pm2_5, Classification result) {
+void ble_notify(const Reading& reading, Classification result) {
     // No client connected — nothing to send.
     if (!s_connected) return;
 
-    // Write the PM2.5 float as raw bytes into the characteristic and notify.
-    // The client reads these 4 bytes and interprets them as an IEEE 754 float.
+    // --- PM2.5 (backwards compat) ---
+    float pm2_5 = reading.pm2_5;
     s_pm25_char->setValue(reinterpret_cast<uint8_t*>(&pm2_5), sizeof(pm2_5));
     s_pm25_char->notify();
 
-    // Write the classification label as a single byte (0–4, or 255 for UNKNOWN).
+    // --- Label ---
     uint8_t label = static_cast<uint8_t>(result);
     s_label_char->setValue(&label, sizeof(label));
     s_label_char->notify();
+
+    // --- Full Reading (packed struct, 36 bytes) ---
+    // We copy field-by-field into a flat byte buffer to avoid any struct padding
+    // surprises between the ESP32 compiler and the browser's DataView.
+    uint8_t buf[36];
+    uint32_t ts = reading.ts_ms;
+    float fields[8] = {
+        reading.pm1, reading.pm2_5, reading.pm4, reading.pm10,
+        reading.temp_c, reading.rh, reading.voc_index, reading.nox_index
+    };
+    memcpy(buf,      &ts,     4);
+    memcpy(buf + 4,  fields, 32);
+    s_reading_char->setValue(buf, sizeof(buf));
+    s_reading_char->notify();
 }

@@ -14,16 +14,28 @@
  * Characteristics:
  *   PM2.5  (notify):  beb5483e-36e1-4688-b7f5-ea07361b26a8  — float, µg/m³
  *   Label  (notify):  beb5483e-36e1-4688-b7f5-ea07361b26a9  — uint8 (Classification enum)
+ *   Reading(notify):  beb5483e-36e1-4688-b7f5-ea07361b26aa  — packed Reading struct (36 bytes)
+ *
+ * Reading payload layout (little-endian):
+ *   [0..3]   uint32  ts_ms
+ *   [4..7]   float   pm1
+ *   [8..11]  float   pm2_5
+ *   [12..15] float   pm4
+ *   [16..19] float   pm10
+ *   [20..23] float   temp_c
+ *   [24..27] float   rh
+ *   [28..31] float   voc_index
+ *   [32..35] float   nox_index
  */
 void ble_init();
 
 /*
- * ble_notify(pm2_5, result)
+ * ble_notify(reading, result)
  *
- * Pushes a new PM2.5 value and classification label to any connected BLE client.
+ * Pushes the full sensor reading and classification label to any connected BLE client.
  * Call this once per pipeline_tick() that returns a valid result.
  *
- * pm2_5  — raw PM2.5 reading in µg/m³
- * result — Classification enum value
+ * reading — full Reading struct from the sensor
+ * result  — Classification enum value
  */
-void ble_notify(float pm2_5, Classification result);
+void ble_notify(const Reading& reading, Classification result);

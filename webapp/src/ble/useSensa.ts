@@ -1,9 +1,10 @@
 import { useState, useCallback, useRef } from "react";
 
 // Must match UUIDs in ble_service.cpp
-const SERVICE_UUID   = "4fafc201-1fb5-459e-8fcc-c5c9c331914b";
-const CHAR_PM25      = "beb5483e-36e1-4688-b7f5-ea07361b26a8";
-const CHAR_LABEL     = "beb5483e-36e1-4688-b7f5-ea07361b26a9";
+const SERVICE_UUID    = "4fafc201-1fb5-459e-8fcc-c5c9c331914b";
+const CHAR_PM25       = "beb5483e-36e1-4688-b7f5-ea07361b26a8";
+const CHAR_LABEL      = "beb5483e-36e1-4688-b7f5-ea07361b26a9";
+const CHAR_READING    = "beb5483e-36e1-4688-b7f5-ea07361b26aa";
 
 export type AqiLabel = "GOOD" | "MODERATE" | "UNHEALTHY" | "VERY_UNHEALTHY" | "HAZARDOUS" | "UNKNOWN";
 
@@ -13,28 +14,49 @@ const LABEL_MAP: Record<number, AqiLabel> = {
 };
 
 export interface SensaReading {
-  ts: number;   // Date.now()
+  ts: number;       // Date.now() — wall clock time of receipt
+  pm1: number;
   pm25: number;
+  pm4: number;
+  pm10: number;
+  tempC: number;
+  rh: number;
+  voc: number;
+  nox: number;
 }
 
 export interface SensaState {
   connected: boolean;
-  pm25: number | null;
   label: AqiLabel;
-  history: SensaReading[];  // rolling window for the chart
+  latest: SensaReading | null;
+  history: SensaReading[];  // rolling window for charts
 }
 
-const HISTORY_MAX = 60; // keep last 60 data points
+const HISTORY_MAX = 60;
+
+// Unpack the 36-byte Reading payload sent by the firmware.
+// Layout (little-endian): uint32 ts_ms, then 8x float32
+function unpackReading(view: DataView): Omit<SensaReading, "ts"> {
+  return {
+    pm1:   view.getFloat32(4,  true),
+    pm25:  view.getFloat32(8,  true),
+    pm4:   view.getFloat32(12, true),
+    pm10:  view.getFloat32(16, true),
+    tempC: view.getFloat32(20, true),
+    rh:    view.getFloat32(24, true),
+    voc:   view.getFloat32(28, true),
+    nox:   view.getFloat32(32, true),
+  };
+}
 
 export function useSensa() {
   const [state, setState] = useState<SensaState>({
     connected: false,
-    pm25: null,
     label: "UNKNOWN",
+    latest: null,
     history: [],
   });
 
-  // Hold a ref to the device so we can disconnect later
   const deviceRef = useRef<BluetoothDevice | null>(null);
 
   const connect = useCallback(async () => {
@@ -50,7 +72,6 @@ export function useSensa() {
       });
 
       deviceRef.current = device;
-
       device.addEventListener("gattserverdisconnected", () => {
         setState(s => ({ ...s, connected: false }));
       });
@@ -58,18 +79,16 @@ export function useSensa() {
       const server  = await device.gatt!.connect();
       const service = await server.getPrimaryService(SERVICE_UUID);
 
-      // --- PM2.5 characteristic ---
-      const pm25Char = await service.getCharacteristic(CHAR_PM25);
-      await pm25Char.startNotifications();
-      pm25Char.addEventListener("characteristicvaluechanged", (e: Event) => {
-        // 4 raw bytes → IEEE 754 little-endian float (matches firmware)
+      // --- Full Reading characteristic (all sensor fields) ---
+      const readingChar = await service.getCharacteristic(CHAR_READING);
+      await readingChar.startNotifications();
+      readingChar.addEventListener("characteristicvaluechanged", (e: Event) => {
         const view = (e.target as BluetoothRemoteGATTCharacteristic).value!;
-        const pm25 = view.getFloat32(0, /*littleEndian=*/true);
-        const ts   = Date.now();
+        const reading: SensaReading = { ts: Date.now(), ...unpackReading(view) };
         setState(s => ({
           ...s,
-          pm25,
-          history: [...s.history.slice(-(HISTORY_MAX - 1)), { ts, pm25 }],
+          latest: reading,
+          history: [...s.history.slice(-(HISTORY_MAX - 1)), reading],
         }));
       });
 
@@ -81,6 +100,10 @@ export function useSensa() {
         const label = LABEL_MAP[view.getUint8(0)] ?? "UNKNOWN";
         setState(s => ({ ...s, label }));
       });
+
+      // Subscribe to PM2.5 too (keeps Python client working, no-op here)
+      const pm25Char = await service.getCharacteristic(CHAR_PM25);
+      await pm25Char.startNotifications();
 
       setState(s => ({ ...s, connected: true }));
     } catch (err) {

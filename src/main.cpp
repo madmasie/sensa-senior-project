@@ -56,7 +56,8 @@ void loop() {
     last_tick_ms = now;
 
     Classification result = pipeline_tick();
-    ble_notify(pipeline_last_reading().pm2_5, result);
+    // Pass the full reading so BLE clients receive all sensor fields.
+    ble_notify(pipeline_last_reading(), result);
 
     Serial.print("Classification: ");
     switch (result) {
