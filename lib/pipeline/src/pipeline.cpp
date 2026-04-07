@@ -1,4 +1,4 @@
-#include "processing/pipeline.h"
+#include "pipeline.h"
 
 #include "buffer.h"
 #include "classify.h"

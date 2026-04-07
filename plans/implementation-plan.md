@@ -19,6 +19,7 @@ _Ordered by dependency. Each item lists what needs to exist before you can start
 | SEN55 sensor driver | `src/sensor/sen55_sensor.cpp` | Real hardware, I2C confirmed working at 0x69 |
 | End-to-end hardware validation | `src/main.cpp` | Classification printing correctly after warm-up; raw sensor values logged each tick |
 | BLE GATT service | `src/ble/ble_service.cpp` | Advertises as "Sensa"; notifies PM2.5 (float) and classification label (uint8) on each tick |
+| Pipeline unit tests | `test/native/test_pipeline/` | 6 tests covering warm-up, buffer-filling, classification, and last-reading state |
 
 ---
 
