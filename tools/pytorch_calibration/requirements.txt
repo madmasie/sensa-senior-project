@@ -1,0 +1,38 @@
+# Python dependencies for the Sensa PM2.5 calibration project.
+#
+# Install with:
+#   pip install -r requirements.txt
+#
+# NOTES ON GPU SUPPORT:
+#   - NVIDIA GPU: replace 'torch' below with the CUDA-enabled wheel from
+#     https://pytorch.org/get-started/locally/
+#   - AMD GPU on Windows: PyTorch does NOT support AMD (ROCm) on Windows.
+#     Training will run on CPU, which is fast enough for this tiny model.
+#   - AMD GPU on Linux: install the ROCm wheel instead (see pytorch.org).
+
+# Core deep learning framework
+torch>=2.1.0
+
+# ONNX: intermediate format for converting PyTorch → TFLite
+onnx>=1.15.0
+
+# Converts ONNX models to TensorFlow SavedModel format
+onnx2tf>=1.17.0
+
+# TensorFlow (CPU-only) — only needed for the final ONNX → TFLite conversion step.
+# We use tensorflow-cpu to keep the install small; we never train in TF.
+tensorflow-cpu>=2.13.0
+
+# Numerical and data handling
+numpy>=1.24.0
+pandas>=2.0.0
+scikit-learn>=1.3.0
+
+# Plotting (optional — used in evaluate.py to draw prediction vs. truth scatter)
+matplotlib>=3.7.0
+
+# Loading config.yaml
+pyyaml>=6.0
+
+# Progress bars during training
+tqdm>=4.65.0

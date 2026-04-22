@@ -1,0 +1,36 @@
+# data_config.example.yaml — Data path configuration for Sensa data scripts.
+#
+# HOW TO USE:
+#   1. Copy this file:   cp data_config.example.yaml data_config.yaml
+#   2. Edit data_config.yaml for your machine (it is gitignored — safe to add local paths).
+#   3. Both data_uploader.py and data_sync.py read data_config.yaml automatically.
+
+# ── Recording directory ───────────────────────────────────────────────────────
+# Where uart_logger.py saves sen55_*.pkl files on THIS machine.
+# This should be OUTSIDE the git repo to keep data files out of version control.
+# Change this to match your local setup:
+#   Windows example: C:/Users/yourname/sensa-recordings
+#   Linux/Mac:       /home/yourname/sensa-recordings
+recording_dir: ~/sensa-recordings
+
+# ── rclone remote ─────────────────────────────────────────────────────────────
+# The rclone remote and folder path where data is shared with the team.
+# Format: <remote-name>:<folder-path>
+#
+# Setup steps (one time per machine):
+#   1. Install rclone: https://rclone.org/install/
+#   2. Run: rclone config
+#      - Choose "New remote" → name it "sensa" (must match the name below)
+#      - Choose your storage type (Google Drive is free and easy)
+#      - Follow the auth prompts
+#   3. Verify it works: rclone ls sensa:sensa-data/
+#
+# All team members must name their remote "sensa" (or change the name below
+# consistently) and connect it to the same shared folder.
+rclone_remote: sensa:sensa-data/raw
+
+# ── Training data directory ───────────────────────────────────────────────────
+# Where data_sync.py should copy downloaded .pkl files so that
+# prepare_data.py and the pytorch_calibration pipeline can find them.
+# This path is relative to the tools/ directory.
+training_data_dir: pytorch_calibration/data/raw

@@ -1,0 +1,100 @@
+# config.yaml — Central configuration for the Sensa PM2.5 calibration model.
+#
+# All tunable parameters live here so you never have to edit Python files
+# to change a learning rate, file path, or model size.
+# main.py loads this file at startup and passes the values to each module.
+
+# ─────────────────────────────────────────────────────────────────────────────
+# DATA
+# ─────────────────────────────────────────────────────────────────────────────
+data:
+  # Directory containing raw SEN55 .pkl files (output of uart_logger.py)
+  # and the BAM or AQS reference CSV.
+  raw_dir: data/raw
+
+  # Where the paired (SEN55 + reference) CSV will be written by prepare_data.py.
+  paired_dir: data/paired
+
+  # Name of the paired dataset file inside paired_dir.
+  paired_file: paired_dataset.csv
+
+  # Name of the BAM or AQS reference CSV in raw_dir.
+  # Expected columns: timestamp, bam_pm2_5
+  # (See prepare_data.py for exact format requirements.)
+  reference_file: bam_reference.csv
+
+  # Fraction of data held out for validation (model selection, not final eval).
+  val_frac: 0.15
+
+  # Fraction of data held out for final testing (never seen during training).
+  test_frac: 0.15
+
+  # Random seed — fixing this makes every train/val/test split identical across
+  # runs, so you can fairly compare different model configurations.
+  seed: 42
+
+# ─────────────────────────────────────────────────────────────────────────────
+# MODEL
+# ─────────────────────────────────────────────────────────────────────────────
+model:
+  # Number of input features fed to the network.
+  # Default: all 8 SEN55 channels (pm1, pm2_5, pm4, pm10, temp, rh, voc, nox).
+  # Reduce this if you want to train on fewer channels (e.g., PM-only).
+  n_features: 8
+
+  # Base channel width of the convolutional layers.
+  # Doubling this roughly doubles the parameter count.
+  # Keep ≤ 32 to stay under the ESP32-S3's 30 KB weight budget.
+  n_channels: 16
+
+# ─────────────────────────────────────────────────────────────────────────────
+# TRAINING
+# ─────────────────────────────────────────────────────────────────────────────
+training:
+  # How many samples the network sees per weight update.
+  # Larger batches = more stable gradients; smaller batches = noisier but
+  # sometimes generalise better. 32 is a safe default.
+  batch_size: 32
+
+  # Maximum number of full passes through the training data.
+  # Early stopping (below) will usually terminate before this limit.
+  epochs: 200
+
+  # Step size for the Adam optimizer.
+  # Think of this as the proportional gain on a control loop — too high and
+  # the weights oscillate; too low and convergence is slow.
+  learning_rate: 0.001
+
+  # L2 weight decay — penalises large weights to prevent overfitting.
+  # Useful when the dataset is small (< a few thousand samples).
+  weight_decay: 1.0e-4
+
+  # If validation loss does not improve for this many epochs, stop early.
+  # Prevents wasting time and overfitting after the model has converged.
+  early_stopping_patience: 20
+
+# ─────────────────────────────────────────────────────────────────────────────
+# EXPORT
+# ─────────────────────────────────────────────────────────────────────────────
+export:
+  # Directory where trained models and conversion artefacts are saved.
+  model_dir: models
+
+  # Filename for the best PyTorch checkpoint (saved during training).
+  pytorch_checkpoint: best_model.pt
+
+  # Filename for the ONNX intermediate model.
+  onnx_file: calibration.onnx
+
+  # Filename for the final TFLite model deployed to the ESP32.
+  tflite_file: calibration.tflite
+
+  # Apply int8 post-training quantisation when converting to TFLite.
+  # Recommended: true — reduces model size ~4× and speeds up ESP32 inference ~5-10×.
+  # Requires a small sample of real input data (representative_data) to calibrate
+  # the quantisation ranges. This is drawn automatically from the training set.
+  quantize: true
+
+  # Path where the generated C header (normalization constants) will be written.
+  # Copy this file into the firmware's include/ directory.
+  c_header_path: ../../include/calib_scaler.h
