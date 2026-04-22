@@ -1,0 +1,103 @@
+[build-system]
+# setuptools is the standard Python build backend.
+# This section is required for `pip install` to understand the file.
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sensa-tools"
+version = "0.1.0"
+description = "Data collection and ML calibration tools for the Sensa air quality monitor"
+requires-python = ">=3.10,<3.14"
+
+# ── IMPORTANT: plain `pip install .` only installs the four core packages. ────
+# To install everything (recommended for most team members):
+#
+#   Windows PowerShell:   pip install ".[all]"    ← quotes required
+#   Linux / Mac:          pip install '.[all]'
+#
+# To install only what you need:
+#   pip install ".[ml]"   → pytorch_calibration/ training pipeline
+#   pip install ".[ble]"  → sensa_client.py BLE monitor
+#
+# ── Core dependencies ─────────────────────────────────────────────────────────
+# Installed by plain `pip install .`. Covers uart_logger.py, data_uploader.py,
+# and data_sync.py only. Does NOT include torch, tensorflow, or bleak.
+dependencies = [
+    "pyserial>=3.5",       # uart_logger.py  — serial port communication
+    "pandas>=2.0.0",       # uart_logger.py  — tabular data + .pkl serialisation
+    "numpy>=1.24.0",       # shared          — numerical arrays
+    "pyyaml>=6.0",         # data_uploader / data_sync — read data_config.yaml
+]
+
+# ── Optional extras ───────────────────────────────────────────────────────────
+[project.optional-dependencies]
+
+ble = [
+    # sensa_client.py — Web Bluetooth (BLE) connection to the ESP32.
+    # PYTHON 3.14+: bleak does not yet publish wheels for Python 3.14.
+    # Install only if you are on Python ≤ 3.13, or wait for a bleak release
+    # that drops the upper-version cap.
+    "bleak>=0.21.0",
+]
+
+ml = [
+    # pytorch_calibration/ — model training and evaluation.
+    # This extra works on Python 3.10+. It does NOT include the TFLite export
+    # stack (tensorflow-cpu / onnx2tf) — those are in the [export] extra below
+    # because TensorFlow does not yet publish Python 3.14 wheels.
+
+    # Core deep learning framework.
+    # NOTE: for an NVIDIA GPU, replace with the CUDA-enabled wheel:
+    #   pip install torch --index-url https://download.pytorch.org/whl/cu121
+    # AMD GPU on Windows is not supported by PyTorch; CPU is used automatically.
+    "torch>=2.1.0",
+
+    # ONNX: intermediate format for the PyTorch → TFLite export path
+    "onnx>=1.15.0",
+
+    # Data preprocessing and metrics
+    "scikit-learn>=1.3.0",
+
+    # Diagnostic plots (predicted vs. true scatter, residual histogram)
+    "matplotlib>=3.7.0",
+]
+
+export = [
+    # TFLite export pipeline: converts the trained PyTorch model to a .tflite
+    # file for deployment on the ESP32-S3.
+    #
+    # PYTHON 3.14+: neither tensorflow-cpu nor onnx2tf publish Python 3.14
+    # wheels yet. If you are on Python 3.14, skip this extra for now and run
+    # the export step later in a Python 3.12 environment:
+    #
+    #   Option A — pyenv (Linux/Mac):
+    #     pyenv install 3.12 && pyenv local 3.12
+    #     pip install ".[export]"
+    #     python pytorch_calibration/main.py --export-only
+    #
+    #   Option B — conda:
+    #     conda create -n sensa-export python=3.12
+    #     conda activate sensa-export
+    #     pip install ".[export]"
+    #     python pytorch_calibration/main.py --export-only
+    #
+    # Training (pip install ".[ml]") is unaffected and works on Python 3.14.
+    "onnx2tf>=1.17.0",
+    "tensorflow-cpu>=2.13.0",
+]
+
+all = [
+    # Installs ml + export + ble together.
+    # On Python 3.14, use `pip install ".[ml]"` instead — see notes above.
+    "sensa-tools[ble,ml,export]",
+]
+
+[tool.setuptools]
+# This pyproject.toml exists to declare dependencies, not to install a library.
+# The scripts (uart_logger.py, data_uploader.py, etc.) are run directly with
+# `python script.py` — they are not installed as commands.
+# Setting packages=[] tells setuptools not to copy any source files into
+# site-packages, while still allowing `pip install -e ".[all]"` to resolve
+# and install all the dependencies above.
+packages = []

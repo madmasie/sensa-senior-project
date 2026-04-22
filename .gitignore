@@ -29,7 +29,7 @@ env/
 # None of these are source code — they are build outputs or raw data.
 tools/pytorch_calibration/data/
 tools/pytorch_calibration/models/
-
+tools/sensa_tools.egg-info
 # Intermediate and final model files generated during export.
 # Regenerate with: python main.py --export-only
 *.onnx
