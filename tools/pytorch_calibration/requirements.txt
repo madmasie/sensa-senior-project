@@ -36,3 +36,7 @@ matplotlib>=3.7.0
 
 # Loading config.yaml
 pyyaml>=6.0
+
+# Public data pipeline (fetch_public_data.py)
+requests>=2.31.0   # HTTP downloads of EPA AQS bulk ZIP files
+tqdm>=4.65.0       # Download progress bars

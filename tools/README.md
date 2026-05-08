@@ -14,6 +14,9 @@ Python utilities for data collection, data sharing, and ML model training.
    - [data\_uploader.py — Push sessions to the cloud](#data_uploaderpy)
    - [data\_sync.py — Pull sessions from the cloud](#data_syncpy)
 5. [pytorch\_calibration — Train the PM2.5 calibration model](#pytorch_calibration)
+   - [Workflow A: Public EPA AQS data (no hardware needed)](#workflow-a-public-epa-aqs-data)
+   - [Workflow B: Local SEN55 + BAM co-location](#workflow-b-local-sen55--bam-co-location)
+   - [Combining both: upgrading from public to local](#combining-both-upgrading-from-public-to-local)
 
 ---
 
@@ -251,55 +254,183 @@ Done. Next steps:
 
 ## pytorch_calibration
 
-Trains a small 1D convolutional neural network that corrects PM2.5 readings
-from the low-cost SEN55 optical counter to match a reference BAM sensor.
+Trains a small 1D convolutional neural network (SensaCalibNet) that corrects
+PM2.5 readings from the SEN55 optical counter to match a reference BAM sensor.
 The trained model is exported to TFLite and deployed on the ESP32-S3.
 
 ```
 Dependencies: pip install -r pytorch_calibration/requirements.txt
 ```
 
-### Full workflow
+There are two independent paths to a trained model. Choose based on what
+hardware is available right now. Both produce a TFLite file that deploys
+identically on the ESP32.
 
-```
-1. Collect data
-   uart_logger.py  →  ~/sensa-recordings/sen55_*.pkl
-   (run alongside BAM to get paired readings)
+| | Workflow A — Public data | Workflow B — Local co-location |
+|---|---|---|
+| **Hardware needed** | None | SEN55 running beside a BAM for several days |
+| **Data source** | EPA AQS public dataset | Your own `uart_logger.py` recordings |
+| **Data volume** | 50,000–500,000 paired hours | ~500–2,000 paired hours typical |
+| **Model inputs** | `pm2_5_optical, temp, rh` (3 features) | `pm1, pm2_5, pm4, pm10, temp, rh, voc, nox` (8 features) |
+| **Entry point** | `train_public.py` | `main.py` |
+| **Model output** | `models_public/` | `models/` |
+| **When to use** | Before BAM access; immediately deployable | After lab co-location; better accuracy |
 
-2. Share data with teammates
-   data_uploader.py → cloud storage
-   data_sync.py     ← pull to pytorch_calibration/data/raw/
+Both pipelines share the same underlying model architecture and training code.
+Running Workflow B later simply replaces the firmware model — the ESP32 firmware
+does not need to change, only the `.tflite` and `.h` files.
 
-3. Pair SEN55 with BAM reference
-   python pytorch_calibration/prepare_data.py
+---
 
-4. Train and export
-   python pytorch_calibration/main.py
+### Workflow A: Public EPA AQS data
 
-5. Deploy
-   Copy models/calibration.tflite → firmware project
-   Copy include/calib_scaler.h    → include/
-```
+No BAM access required. The EPA hosts co-located reference + continuous monitor
+data from hundreds of California sites. We download, match by site and hour,
+apply a humidity correction, and train on the result.
 
-### Quick smoke test (no hardware required)
-
-Verify the pipeline works end-to-end before you have real data:
+**Step 1 — Install dependencies**
 
 ```bash
 cd tools/
-python pytorch_calibration/main.py --demo
+pip install -r pytorch_calibration/requirements.txt
 ```
 
-This generates 2,000 synthetic sensor readings, trains the model, evaluates it,
-and prints accuracy metrics. Use it to confirm that all dependencies are installed
-and the export pipeline is functional.
+**Step 2 — Download and pair the EPA AQS data**
 
-### prepare_data.py
+Run from inside `tools/pytorch_calibration/`:
 
-Pairs SEN55 `.pkl` files with the BAM reference CSV and outputs a single
-`paired_dataset.csv` ready for training.
+```bash
+# Default: California, 2021–2022 (~1–2 GB download, cached after first run)
+python fetch_public_data.py
 
-**Reference CSV format** (`data/raw/bam_reference.csv`):
+# Choose specific years
+python fetch_public_data.py --state CA --years 2020 2021 2022
+
+# Save to a named subfolder (useful when building multi-year datasets)
+python fetch_public_data.py --state CA --years 2021 --out-dir data/public/CA_2021
+python fetch_public_data.py --state CA --years 2022 --out-dir data/public/CA_2022
+
+# Also download SO2 and NO2 (needed to activate gas-interference corrections)
+python fetch_public_data.py --include-gas
+```
+
+This writes `data/public/paired_public.csv` (or `<out-dir>/paired_public.csv`)
+with columns: `site_id, timestamp, pm2_5_optical, temp, rh, pm2_5_reference`.
+
+**What the download contains:**
+
+| AQS Parameter | Code | Role in training |
+|---|---|---|
+| PM2.5 FRM/FEM (BAM / filter) | 88101 | Target — "true" PM2.5 the model learns to predict |
+| PM2.5 continuous non-FRM | 88502 | Feature — optical monitor reading (SEN55 analog) |
+| Outdoor temperature | 62101 | Feature + temperature correction |
+| Relative humidity | 62201 | Feature + humidity correction |
+| SO2 (optional, `--include-gas`) | 42401 | Feature + SO2 interference correction |
+| NO2 (optional, `--include-gas`) | 42602 | Feature + NO2 interference correction |
+
+Sites are matched by the AQS site identifier (state-county-site FIPS). Only hours
+where all required parameters have valid readings are kept.
+
+**Physics-based corrections** (applied before ML training, configured in
+`config.yaml` under `public_data.corrections`):
+
+| Correction | Default | Formula |
+|---|---|---|
+| Humidity | `kappa: 0.5` | `PM_corrected = PM_raw / (1 + kappa × RH / (100 - RH))` |
+| Temperature | `alpha: 0.0` (disabled) | `PM_corrected = PM_raw × (1 + alpha × (T - T_ref))` |
+| SO2 | `beta: 0.0` (disabled) | `PM_corrected = PM_raw - beta × SO2_ppb` |
+| NO2 | `gamma: 0.0` (disabled) | `PM_corrected = PM_raw - gamma × NO2_ppb` |
+
+To add a new correction factor, subclass `CorrectionFactor` in
+`ingestion/corrections.py` and register it in `CorrectionPipeline._FACTOR_MAP`.
+
+**Step 3 — Train**
+
+```bash
+# Train on the default paired_public.csv
+python train_public.py
+
+# Train on a specific file or directory
+python train_public.py --data data/public/CA_2022/paired_public.csv
+
+# Combine multiple years or regions (concatenated before training)
+python train_public.py --data data/public/CA_2021 data/public/CA_2022
+
+# Mix of files and directories
+python train_public.py --data data/public/CA_2021 \
+                               data/public/CA_2022/paired_public.csv
+
+# Train without exporting to TFLite
+python train_public.py --no-export
+```
+
+**Step 4 — Deploy**
+
+```
+Copy models_public/calibration_public.tflite → firmware project
+Copy include/calib_scaler_public.h            → include/
+```
+
+At inference time on the SEN55, feed these three values to the model:
+
+| SEN55 channel | Model input |
+|---|---|
+| `pm2_5` | `pm2_5_optical` (input 0) |
+| `temp` | `temp` (input 1) |
+| `rh` | `rh` (input 2) |
+| `pm1, pm4, pm10, voc, nox` | not used by this model |
+
+**Outputs (Workflow A)**
+
+| File | Description |
+|---|---|
+| `models_public/best_model_public.pt` | Best PyTorch checkpoint |
+| `models_public/calibration_public.onnx` | Intermediate ONNX model |
+| `models_public/calibration_public.tflite` | TFLite model → deploy to ESP32 |
+| `models_public/scaler.pkl` | Fitted MinMaxScaler |
+| `models_public/predictions.png` | Scatter + residual diagnostic plots |
+| `include/calib_scaler_public.h` | C header with normalisation constants |
+
+---
+
+### Workflow B: Local SEN55 + BAM co-location
+
+Use this workflow once you have access to a BAM machine in the lab and can
+physically run the SEN55 alongside it.  This produces an 8-feature model
+specific to your unit and gives better accuracy than Workflow A.
+
+**Requirements:**
+- SEN55 deployed within 1–2 m of a BAM machine (or within 1–2 km of an EPA
+  AQS monitoring station).
+- Several days of continuous paired readings across varied PM conditions
+  (clean days, traffic periods, any smoke events). ~500+ paired hours is
+  the practical minimum for a well-generalised model.
+
+**Step 1 — Record SEN55 data**
+
+Leave `uart_logger.py` running while the SEN55 is co-located with the BAM:
+
+```bash
+# Linux / Mac
+python uart_logger.py --port /dev/ttyUSB0 --out ~/sensa-recordings
+
+# Windows
+python uart_logger.py --port COM3 --out ~/sensa-recordings
+```
+
+Each session is saved as `sen55_YYYY-MM-DD_HH-MM-SS.pkl`. The script buffers
+readings between `START_RECORDING` / `STOP_RECORDING` sentinels from the firmware
+(see uart_logger.py docstring for details).
+
+**Step 2 — Obtain the BAM reference CSV**
+
+The BAM machine produces hourly PM2.5 values. Export or copy them into:
+
+```
+pytorch_calibration/data/raw/bam_reference.csv
+```
+
+Required columns:
 
 ```
 timestamp,bam_pm2_5
@@ -308,42 +439,75 @@ timestamp,bam_pm2_5
 ...
 ```
 
-The BAM reports hourly averages. `prepare_data.py` aggregates the 1–2 Hz SEN55
-stream into matching hourly means before merging.
+> **Alternative — use a nearby EPA AQS station:**
+> If the BAM machine in the lab is unavailable, an EPA AQS station within
+> ~1–2 km of your SEN55 deployment is a free substitute.
+> 1. Download hourly PM2.5 data for California from
+>    https://aqs.epa.gov/aqsweb/airdata/download_files.html (parameter 88101).
+> 2. Filter to the nearest site by latitude/longitude.
+> 3. Rename `Date GMT` + `Time GMT` → `timestamp`, `Sample Measurement` → `bam_pm2_5`.
+> The station must be physically close — spatial correlation drops off quickly
+> for PM2.5.
+
+**Step 3 — Share recordings with teammates** *(optional)*
 
 ```bash
-python pytorch_calibration/prepare_data.py
-# Options:
-python pytorch_calibration/prepare_data.py --raw-dir path/to/raw --out-dir path/to/paired
+# Push your recordings to the shared cloud folder
+python data_uploader.py
+
+# Pull recordings your teammates collected
+python data_sync.py
 ```
 
-> **Using an EPA AQS station instead of a BAM:**
-> Download hourly PM2.5 data for your state from
-> https://aqs.epa.gov/aqsweb/airdata/download_files.html,
-> filter to the nearest monitoring station, and rename the columns to
-> `timestamp` and `bam_pm2_5`. The station must be within ~1–2 km of your
-> SEN55 deployment for the values to be spatially comparable.
+This syncs `.pkl` files via rclone into `pytorch_calibration/data/raw/`.
+See the [Data sharing workflow](#data-sharing-workflow) section for setup.
 
-### main.py
+**Step 4 — Pair SEN55 data with the BAM reference**
+
+```bash
+cd tools/pytorch_calibration/
+python prepare_data.py
+```
+
+`prepare_data.py` loads all `sen55_*.pkl` files from `data/raw/`, resamples the
+1–2 Hz SEN55 stream to hourly means, and joins on timestamp with the BAM CSV.
+Output: `data/paired/paired_dataset.csv`.
+
+```bash
+# Custom paths:
+python prepare_data.py --raw-dir path/to/raw --out-dir path/to/paired
+```
+
+**Step 5 — Train and export**
 
 ```bash
 # Full pipeline: train + evaluate + export to TFLite
-python pytorch_calibration/main.py
+python main.py
 
-# Train only (no export)
-python pytorch_calibration/main.py --no-export
+# Train only (skip TFLite export)
+python main.py --no-export
 
-# Export an existing checkpoint to TFLite (no retraining)
-python pytorch_calibration/main.py --export-only
+# Re-export an existing checkpoint without retraining
+python main.py --export-only
 
-# Smoke test with synthetic data
-python pytorch_calibration/main.py --demo
+# Verify the pipeline with synthetic data (no real data needed)
+python main.py --demo
 ```
 
-All tunable parameters (learning rate, model size, batch size, etc.) are in
-`pytorch_calibration/config.yaml` — no Python editing required for routine tuning.
+All tunable parameters (learning rate, model size, batch size) live in
+`config.yaml` — no Python editing required.
 
-### Outputs
+**Step 6 — Deploy**
+
+```
+Copy models/calibration.tflite → firmware project
+Copy include/calib_scaler.h    → include/
+```
+
+This model uses all 8 SEN55 channels:
+`pm1, pm2_5, pm4, pm10, temp, rh, voc, nox → calibrated PM2.5`
+
+**Outputs (Workflow B)**
 
 | File | Description |
 |---|---|
@@ -354,6 +518,33 @@ All tunable parameters (learning rate, model size, batch size, etc.) are in
 | `models/predictions.png` | Scatter + residual diagnostic plots |
 | `include/calib_scaler.h` | Auto-generated C header with normalisation constants |
 
+---
+
+### Combining both: upgrading from public to local
+
+The recommended sequence when starting with no BAM access:
+
+```
+Phase 1 (now):
+  python fetch_public_data.py        ← download EPA AQS data
+  python train_public.py             ← train 3-feature model
+  → deploy models_public/*.tflite to firmware
+  → sensor is calibrated with publicly-trained model
+
+Phase 2 (after BAM access + co-location):
+  python prepare_data.py             ← pair local SEN55 data with BAM
+  python main.py                     ← train 8-feature model
+  → replace firmware model with models/*.tflite
+  → sensor is now calibrated to your specific unit
+```
+
+The firmware interface does not change between phases — only the `.tflite`
+and `.h` files are swapped. The 8-feature local model uses all SEN55 channels
+and is expected to outperform the 3-feature public model once ~500+ paired
+hours of local data are available.
+
+---
+
 ### Accuracy targets (EPA guidelines for low-cost PM2.5 sensors)
 
 | Metric | Target |
@@ -362,6 +553,8 @@ All tunable parameters (learning rate, model size, batch size, etc.) are in
 | RMSE | < 7 µg/m³ |
 | R² | > 0.80 |
 | MBE | within ±5 µg/m³ |
+
+These targets are checked automatically at the end of every training run.
 
 ### GPU note
 

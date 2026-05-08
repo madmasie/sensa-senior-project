@@ -98,3 +98,64 @@ export:
   # Path where the generated C header (normalization constants) will be written.
   # Copy this file into the firmware's include/ directory.
   c_header_path: ../../include/calib_scaler.h
+
+# ─────────────────────────────────────────────────────────────────────────────
+# PUBLIC DATA PIPELINE (EPA AQS)
+# Run: python fetch_public_data.py   → downloads and pairs AQS data
+#      python train_public.py        → trains the public model
+# ─────────────────────────────────────────────────────────────────────────────
+public_data:
+  # US state to download AQS data for.
+  # Supported: CA TX NY FL CO WA OR AZ NV UT
+  state: CA
+
+  # Calendar years to download. More years = more data but longer download.
+  # 2021-2022 gives a good balance of data volume and recency.
+  years: [2021, 2022]
+
+  # Set to true to also download SO2 (param 42401) and NO2 (param 42602).
+  # Required to enable SO2Correction / NO2Correction below.
+  # Adds ~200-400 MB to the download.
+  include_gas: false
+
+  # Path to the paired public dataset (output of fetch_public_data.py).
+  paired_file: data/public/paired_public.csv
+
+  # Input features for the public model.
+  # These correspond to columns in paired_public.csv.
+  # pm2_5_optical is the co-located continuous monitor reading (SEN55 analog).
+  features: [pm2_5_optical, temp, rh]
+
+  # Target variable: FRM/FEM reference PM2.5 from a BAM or filter sampler.
+  target: pm2_5_reference
+
+  # Physics-based pre-corrections applied to pm2_5_optical before training.
+  # The ML model then learns residual calibration on top of these.
+  # Set a coefficient to 0.0 to disable a correction without removing it.
+  # Uncomment so2 / no2 only when include_gas: true.
+  corrections:
+    humidity:
+      kappa: 0.5        # hygroscopic growth coefficient (0.3–0.8 typical)
+    temperature:
+      alpha: 0.0        # temperature sensitivity 1/°C (0 = disabled, not yet characterised)
+      t_ref: 20.0       # reference temperature in °C
+    # so2:
+    #   beta: 0.0       # SO2 interference (µg/m³)/ppb — needs include_gas: true
+    # no2:
+    #   gamma: 0.0      # NO2 interference (µg/m³)/ppb — needs include_gas: true
+
+  # Model config for the public pipeline (3 features instead of 8).
+  # n_channels can be raised to 32 without ESP32 budget concerns for this model.
+  model:
+    n_features: 3
+    n_channels: 16
+
+  # Export paths — kept separate from the local pipeline so models/ is not
+  # overwritten. Copy these to firmware only after validating the public model.
+  export:
+    model_dir: models_public
+    pytorch_checkpoint: best_model_public.pt
+    onnx_file: calibration_public.onnx
+    tflite_file: calibration_public.tflite
+    quantize: true
+    c_header_path: ../../include/calib_scaler_public.h

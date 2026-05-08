@@ -35,7 +35,7 @@ EXPECTED CSV COLUMNS:
 
 import pickle
 from pathlib import Path
-from typing import Optional, Tuple
+from typing import List, Optional, Tuple
 
 import numpy as np
 import pandas as pd
@@ -44,14 +44,13 @@ from sklearn.preprocessing import MinMaxScaler
 from torch.utils.data import Dataset
 
 
-# ── Feature column names ──────────────────────────────────────────────────────
-# Must match the column names output by uart_logger.py and prepare_data.py.
-# The order here is the order in which features are fed to the model —
-# this same order must be used in firmware preprocessing.
+# ── Default feature / target column names ────────────────────────────────────
+# These defaults match the LOCAL pipeline (uart_logger.py → prepare_data.py).
+# The PUBLIC pipeline (fetch_public_data.py → train_public.py) passes its own
+# lists via the optional input_features / target_column parameters below.
+# External code that imports these constants directly is unaffected.
 INPUT_FEATURES = ['pm1', 'pm2_5', 'pm4', 'pm10', 'temp', 'rh', 'voc', 'nox']
-
-# The reference measurement we are trying to predict.
-TARGET_COLUMN = 'bam_pm2_5'
+TARGET_COLUMN  = 'bam_pm2_5'
 
 
 class PM25CalibrationDataset(Dataset):
@@ -78,23 +77,32 @@ class PM25CalibrationDataset(Dataset):
         dataframe: pd.DataFrame,
         scaler: Optional[MinMaxScaler] = None,
         fit_scaler: bool = True,
+        input_features: Optional[List[str]] = None,
+        target_column: Optional[str] = None,
     ):
         """
         Args:
-            dataframe:  A cleaned DataFrame with INPUT_FEATURES and TARGET_COLUMN.
-            scaler:     A pre-fit MinMaxScaler. For training data, pass None and
-                        set fit_scaler=True. For val/test data, pass the scaler
-                        that was fit on the training set so the same scaling
-                        is applied consistently.
-            fit_scaler: If True, fit a new scaler on this data.
-                        Always True for the training split; always False for
-                        validation and test splits.
+            dataframe:      A cleaned DataFrame containing input_features and
+                            target_column.
+            scaler:         A pre-fit MinMaxScaler. Pass None + fit_scaler=True
+                            for the training split; pass the training scaler +
+                            fit_scaler=False for val/test splits.
+            fit_scaler:     Fit a new scaler on this data when True.
+            input_features: Feature column names to use. Defaults to the
+                            module-level INPUT_FEATURES (local SEN55 pipeline).
+                            Override for the public pipeline:
+                            ['pm2_5_optical', 'temp', 'rh'].
+            target_column:  Target column name. Defaults to TARGET_COLUMN
+                            ('bam_pm2_5'). Override for the public pipeline:
+                            'pm2_5_reference'.
         """
+        self.input_features = input_features if input_features is not None else INPUT_FEATURES
+        self.target_column  = target_column  if target_column  is not None else TARGET_COLUMN
         self.df = dataframe.reset_index(drop=True)
 
         # Pull out raw numpy arrays for fast indexing
-        X_raw = self.df[INPUT_FEATURES].values.astype(np.float32)
-        y_raw = self.df[TARGET_COLUMN].values.astype(np.float32)
+        X_raw = self.df[self.input_features].values.astype(np.float32)
+        y_raw = self.df[self.target_column].values.astype(np.float32)
 
         # ── Normalise inputs ──────────────────────────────────────────────────
         if scaler is None:
@@ -138,36 +146,46 @@ class PM25CalibrationDataset(Dataset):
 
 # ── File I/O helpers ──────────────────────────────────────────────────────────
 
-def load_paired_csv(csv_path: str) -> pd.DataFrame:
+def load_paired_csv(
+    csv_path: str,
+    feature_cols: Optional[List[str]] = None,
+    target_col: Optional[str] = None,
+) -> pd.DataFrame:
     """
-    Load the paired SEN55 + BAM dataset from CSV and apply basic cleaning.
+    Load a paired sensor + reference dataset from CSV and apply basic cleaning.
+
+    Works for both the local pipeline (SEN55 + BAM columns) and the public
+    pipeline (pm2_5_optical + pm2_5_reference columns). Pass feature_cols and
+    target_col to override the defaults when using the public pipeline.
 
     Args:
-        csv_path: Path to the CSV file produced by prepare_data.py.
+        csv_path:     Path to the paired CSV file.
+        feature_cols: Input feature column names. Defaults to INPUT_FEATURES.
+        target_col:   Target column name. Defaults to TARGET_COLUMN.
 
     Returns:
         A clean pandas DataFrame ready for PM25CalibrationDataset.
     """
-    df = pd.read_csv(csv_path, parse_dates=['timestamp'])
+    feature_cols = feature_cols if feature_cols is not None else INPUT_FEATURES
+    target_col   = target_col   if target_col   is not None else TARGET_COLUMN
 
+    df = pd.read_csv(csv_path, parse_dates=['timestamp'])
     initial_rows = len(df)
 
-    # Drop rows missing the reference label — they cannot be used for training.
-    df = df.dropna(subset=[TARGET_COLUMN])
+    df = df.dropna(subset=[target_col])
+    df = df.dropna(subset=feature_cols)
 
-    # Drop rows missing any input feature.
-    df = df.dropna(subset=INPUT_FEATURES)
+    # Apply physical bounds to columns that are present (works for both pipelines)
+    for col in ['pm1', 'pm2_5', 'pm4', 'pm10', 'pm2_5_optical', 'pm2_5_reference']:
+        if col in df.columns:
+            df[col] = df[col].clip(lower=0.0)
 
-    # PM concentration cannot be negative — clamp any noise-induced negatives.
-    for col in ['pm1', 'pm2_5', 'pm4', 'pm10']:
-        df[col] = df[col].clip(lower=0.0)
+    if 'rh' in df.columns:
+        df['rh'] = df['rh'].clip(lower=0.0, upper=100.0)
 
-    # Relative humidity is bounded [0, 100]% by physical definition.
-    df['rh'] = df['rh'].clip(lower=0.0, upper=100.0)
-
-    # VOC and NOx indices are defined on [1, 500].
     for col in ['voc', 'nox']:
-        df[col] = df[col].clip(lower=1.0, upper=500.0)
+        if col in df.columns:
+            df[col] = df[col].clip(lower=1.0, upper=500.0)
 
     dropped = initial_rows - len(df)
     if dropped > 0:
