@@ -43,33 +43,80 @@
             tqdm
           ]
         );
+
+        # ── Runnable apps ───────────────────────────────────────────────────
+        # Each tools/ script is wrapped as a `nix run .#<name>` app. The wrapper
+        # locates the repo with `git rev-parse`, so the app works from any
+        # directory inside the working tree, and `cd`s into the directory the
+        # script expects (its relative data/model paths resolve from there).
+        # Output files are written into the live working tree, never the
+        # read-only /nix/store copy.
+        mkScriptApp =
+          { dir, script }:
+          let
+            wrapper = pkgs.writeShellApplication {
+              name = "sensa-${pkgs.lib.removeSuffix ".py" script}";
+              runtimeInputs = [ pythonEnv pkgs.rclone pkgs.git ];
+              text = ''
+                repo_root=$(git rev-parse --show-toplevel 2>/dev/null || true)
+                if [ -z "$repo_root" ]; then
+                  echo "error: run this from inside the sensa-senior-project git repo" >&2
+                  exit 1
+                fi
+                export MPLBACKEND=Agg
+                cd "$repo_root/${dir}"
+                exec python ${script} "$@"
+              '';
+            };
+          in
+          {
+            type = "app";
+            program = "${wrapper}/bin/${wrapper.name}";
+            meta.description = "Run ${dir}/${script}";
+          };
       in
       {
+        # `nix run .#<name>` — see tools/README.md "Running with Nix".
+        apps = {
+          # ── Data collection / sharing (tools/) ──
+          uart-logger   = mkScriptApp { dir = "tools"; script = "uart_logger.py"; };
+          sensa-client  = mkScriptApp { dir = "tools"; script = "sensa_client.py"; };
+          data-uploader = mkScriptApp { dir = "tools"; script = "data_uploader.py"; };
+          data-sync     = mkScriptApp { dir = "tools"; script = "data_sync.py"; };
+
+          # ── ML pipeline (tools/pytorch_calibration/) ──
+          fetch-public-data = mkScriptApp { dir = "tools/pytorch_calibration"; script = "fetch_public_data.py"; };
+          prepare-data      = mkScriptApp { dir = "tools/pytorch_calibration"; script = "prepare_data.py"; };
+          train-public      = mkScriptApp { dir = "tools/pytorch_calibration"; script = "train_public.py"; };
+          train-local       = mkScriptApp { dir = "tools/pytorch_calibration"; script = "main.py"; };
+          paper-figures     = mkScriptApp { dir = "tools/pytorch_calibration"; script = "paper_figures.py"; };
+        };
+
         devShells.default = pkgs.mkShell {
           packages = [
             pythonEnv
             pkgs.rclone # data_uploader.py / data_sync.py — shared cloud sync
           ];
 
-          # Headless training: let matplotlib write predictions.png without
-          # needing an X display.
+          # Headless training: let matplotlib write figures without an X display.
           MPLBACKEND = "Agg";
 
           shellHook = ''
             echo "Sensa dev environment  —  Python ${python.version} (training-only)"
             echo "  $(rclone version | head -n1)"
             echo
-            echo "Workflow A — public EPA AQS data (run from tools/pytorch_calibration/):"
-            echo "  python fetch_public_data.py        # download + pair AQS data"
-            echo "  python train_public.py             # train 3-feature model"
+            echo "Run scripts directly with 'nix run' (works from anywhere in the repo):"
+            echo "  nix run .#fetch-public-data        # download + pair AQS data"
+            echo "  nix run .#train-public             # train 3-feature model"
+            echo "  nix run .#prepare-data             # pair SEN55 .pkl with BAM CSV"
+            echo "  nix run .#train-local -- --no-export   # train 8-feature model"
+            echo "  nix run .#paper-figures -- --demo  # generate paper figures"
+            echo "  nix run .#uart-logger -- --port /dev/ttyUSB0"
+            echo "  nix run .#data-uploader / .#data-sync"
+            echo "  (nix flake show  lists every app)"
             echo
-            echo "Workflow B — local SEN55 + BAM co-location:"
-            echo "  python prepare_data.py             # pair SEN55 .pkl with BAM CSV"
-            echo "  python main.py --no-export         # train 8-feature model"
-            echo
-            echo "Data collection / sharing (run from tools/):"
-            echo "  python uart_logger.py --port /dev/ttyUSB0"
-            echo "  python data_uploader.py / data_sync.py"
+            echo "Or run the scripts the classic way from inside this shell, e.g."
+            echo "  cd tools/pytorch_calibration && python train_public.py"
             echo
             echo "NOTE: TFLite export (--export) needs onnx2tf, which is not in"
             echo "      nixpkgs and is excluded from this shell. To export, run the"

@@ -17,6 +17,7 @@ Python utilities for data collection, data sharing, and ML model training.
    - [Workflow A: Public EPA AQS data (no hardware needed)](#workflow-a-public-epa-aqs-data)
    - [Workflow B: Local SEN55 + BAM co-location](#workflow-b-local-sen55--bam-co-location)
    - [Combining both: upgrading from public to local](#combining-both-upgrading-from-public-to-local)
+   - [Generating paper figures](#generating-paper-figures)
 
 ---
 
@@ -34,6 +35,39 @@ pip install -r pytorch_calibration/requirements.txt
 
 **rclone** is required for data sharing. Install once per machine:
 - Windows/Mac/Linux: https://rclone.org/install/
+
+### Running with Nix (recommended)
+
+The repository ships a `flake.nix` that provides every dependency above in a
+reproducible shell — no `pip install` needed. Two ways to use it:
+
+**Option 1 — drop into a dev shell**, then run scripts the normal way:
+
+```bash
+nix develop
+cd tools/pytorch_calibration
+python paper_figures.py --demo
+```
+
+**Option 2 — run a script directly** with `nix run`. Each script is exposed as
+a named app. The wrapper finds the repo via `git`, so it works from anywhere
+inside the working tree:
+
+| Command | Script |
+|---|---|
+| `nix run .#uart-logger -- --port /dev/ttyUSB0` | `uart_logger.py` |
+| `nix run .#sensa-client` | `sensa_client.py` |
+| `nix run .#data-uploader` | `data_uploader.py` |
+| `nix run .#data-sync` | `data_sync.py` |
+| `nix run .#fetch-public-data` | `fetch_public_data.py` |
+| `nix run .#prepare-data` | `prepare_data.py` |
+| `nix run .#train-public` | `train_public.py` |
+| `nix run .#train-local` | `main.py` |
+| `nix run .#paper-figures` | `paper_figures.py` |
+
+Anything after `--` is passed straight through to the script, e.g.
+`nix run .#train-local -- --no-export` or `nix run .#paper-figures -- --demo`.
+Run `nix flake show` to list every app.
 
 ---
 
@@ -540,6 +574,67 @@ The firmware interface does not change between phases — only the `.tflite`
 and `.h` files are swapped. The 8-feature local model uses all SEN55 channels
 and is expected to outperform the 3-feature public model once ~500+ paired
 hours of local data are available.
+
+---
+
+### Generating paper figures
+
+`paper_figures.py` turns the model's evaluation results into three
+publication-ready matplotlib figures for the report/paper:
+
+| Figure | Output file | Content |
+|---|---|---|
+| K-fold violin plot | `paper_figures/fig_kfold_violin.{png,pdf}` | Distribution of Accuracy, Precision, F1-score, Recall, Specificity and Sensitivity across the cross-validation folds |
+| Confusion matrix | `paper_figures/fig_confusion_matrix.{png,pdf}` | Classic 5×5 matrix over the EPA AQI categories (Good → Hazardous) |
+| CNN architecture | `paper_figures/fig_cnn_architecture.{png,pdf}` | Block diagram of the SensaCalibNet 1D CNN |
+
+Each figure is written as both a 300 dpi PNG (raster) and a vector PDF, ready
+to drop straight into a LaTeX or Word document.
+
+```
+Dependencies: matplotlib, numpy, pandas (already in requirements.txt / the Nix shell)
+```
+
+**Usage** (run from `tools/pytorch_calibration/`, or `nix run .#paper-figures`):
+
+```bash
+# Render from your real result files
+python paper_figures.py
+
+# Preview the layout with synthetic data — no result files needed
+python paper_figures.py --demo
+
+# Custom paths
+python paper_figures.py --kfold analysis/kfold_results.csv \
+                        --confusion analysis/confusion_matrix.csv \
+                        --outdir paper_figures
+```
+
+| Argument | Default | Description |
+|---|---|---|
+| `--kfold` | `analysis/kfold_results.csv` | CSV of per-fold classification metrics |
+| `--confusion` | `analysis/confusion_matrix.csv` | CSV of the 5×5 AQI confusion matrix (counts) |
+| `--outdir` | `paper_figures/` | Directory where the figure files are written |
+| `--demo` | off | Ignore the input files and use synthetic demo data |
+| `--n-features` | `8` | CNN input feature count (architecture figure only) |
+| `--n-channels` | `16` | CNN base conv width (architecture figure only) |
+
+**Input files.** The script reads two result files from `analysis/`. If either
+is missing it falls back to synthetic demo data and stamps a red `[DEMO DATA]`
+watermark on the figure. See `analysis/README.md` and the `*.example.csv`
+templates for the exact column layout:
+
+- `kfold_results.csv` — one row per fold, columns `fold, accuracy, precision,
+  f1, recall, specificity, sensitivity` (macro-averaged across the 5 AQI
+  classes; values may be 0–1 or 0–100, auto-detected).
+- `confusion_matrix.csv` — a 5×5 integer matrix of sample counts, rows = true
+  AQI category, columns = predicted, in the order Good, Moderate, Unhealthy,
+  Very Unhealthy, Hazardous.
+
+> SensaCalibNet is a *regressor*: it outputs a single calibrated PM2.5 value,
+> which is then binned into the five EPA AQI categories
+> (`lib/classify/src/classify.cpp`). The violin-plot and confusion-matrix
+> metrics score that category assignment.
 
 ---
 

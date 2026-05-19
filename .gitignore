@@ -38,3 +38,11 @@ tools/sensa_tools.egg-info
 *.onnx
 *.tflite
 *.pt
+
+# ── Generated figures ────────────────────────────────────────────────────────
+# Plots and figures produced by the tools (paper_figures.py, training
+# diagnostics, etc.) are build outputs — regenerate them, don't commit them.
+*.png
+*.pdf
+# Exception: webapp assets that are genuine source files.
+!webapp/src/assets/hero.png
