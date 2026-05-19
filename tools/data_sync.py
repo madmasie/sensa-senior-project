@@ -36,21 +36,26 @@ import yaml
 # ── Config loading (shared with data_uploader.py) ─────────────────────────────
 
 def load_config(config_path: Path) -> dict:
-    """Load data_config.yaml. Exit with instructions if the file is missing."""
+    """Load the data_sync section of tools/config.yaml.
+
+    Returns just the data_sync sub-dict, so callers see recording_dir,
+    rclone_remote and training_data_dir as top-level keys.
+    """
     if not config_path.exists():
-        example = config_path.parent / "data_config.example.yaml"
         print(f"ERROR: {config_path} not found.")
-        print()
-        if example.exists():
-            print("Copy the example and edit it for your machine:")
-            print(f"    cp {example.name} data_config.yaml")
+        print("config.yaml is part of the repository — restore it with git.")
         sys.exit(1)
 
     with open(config_path, 'r') as f:
         cfg = yaml.safe_load(f)
 
-    cfg['recording_dir'] = Path(cfg['recording_dir']).expanduser()
-    return cfg
+    if 'data_sync' not in cfg:
+        print(f"ERROR: {config_path} has no 'data_sync' section.")
+        sys.exit(1)
+
+    sync_cfg = cfg['data_sync']
+    sync_cfg['recording_dir'] = Path(sync_cfg['recording_dir']).expanduser()
+    return sync_cfg
 
 
 def check_rclone() -> None:
@@ -89,7 +94,7 @@ def list_remote_sessions(rclone_remote: str) -> list[str]:
         print()
         print("Possible causes:")
         print("  - rclone remote is not configured: run 'rclone config'")
-        print("  - Remote name is wrong: check 'rclone_remote' in data_config.yaml")
+        print("  - Remote name is wrong: check 'rclone_remote' under data_sync in tools/config.yaml")
         print("  - No internet connection")
         print()
         print(f"rclone error output:\n{result.stderr}")
@@ -206,8 +211,8 @@ def main() -> None:
         description="Pull SEN55 recording sessions from shared cloud storage to your training folder."
     )
     parser.add_argument(
-        '--config', default=str(script_dir / 'data_config.yaml'),
-        help="Path to data_config.yaml (default: tools/data_config.yaml)"
+        '--config', default=str(script_dir / 'config.yaml'),
+        help="Path to the shared tools/config.yaml (default: tools/config.yaml)"
     )
     parser.add_argument(
         '--all', action='store_true',

@@ -1,12 +1,51 @@
-# config.yaml — Central configuration for the Sensa PM2.5 calibration model.
+# config.yaml — Single configuration file for all Sensa tools.
+#
+# This one file is read by every script in tools/:
+#   data_uploader.py / data_sync.py  → data_sync section
+#   pytorch_calibration/main.py            → data, model, training, export
+#   pytorch_calibration/train_public.py    → public_data
+#   pytorch_calibration/fetch_public_data.py → public_data
+#
+# Each script locates this file relative to its own path, so the scripts work
+# no matter which directory you launch them from.
+
+# ═════════════════════════════════════════════════════════════════════════════
+# DATA SYNC (rclone upload / download of raw SEN55 recordings)
+# Used by: data_uploader.py, data_sync.py
+# ═════════════════════════════════════════════════════════════════════════════
+data_sync:
+  # Where uart_logger.py saves sen55_*.pkl files on THIS machine.
+  # Keep this OUTSIDE the git repo so data files stay out of version control.
+  # ~ expands to your home directory, so this default works on any machine.
+  #   Windows example: C:/Users/yourname/sensa-recordings
+  recording_dir: ~/sensa-recordings
+
+  # The rclone remote and folder path where data is shared with the team.
+  # Format: <remote-name>:<folder-path>
+  #
+  # Setup steps (one time per machine):
+  #   1. Install rclone: https://rclone.org/install/
+  #   2. Run: rclone config
+  #      - New remote → name it "sensa" (must match the name below)
+  #      - Choose your storage type (Google Drive is free and easy)
+  #   3. Verify it works: rclone ls sensa:sensa-data/
+  #
+  # All team members must name their remote "sensa" (or change it here
+  # consistently) and point it at the same shared folder.
+  rclone_remote: sensa:sensa-data/raw
+
+  # Where data_sync.py copies downloaded .pkl files so that prepare_data.py
+  # and the pytorch_calibration pipeline can find them.
+  # This path is relative to the tools/ directory.
+  training_data_dir: pytorch_calibration/data/raw
+
+# ═════════════════════════════════════════════════════════════════════════════
+# CALIBRATION MODEL — LOCAL PIPELINE (SEN55 + BAM co-location)
+# Used by: pytorch_calibration/main.py
 #
 # All tunable parameters live here so you never have to edit Python files
 # to change a learning rate, file path, or model size.
-# main.py loads this file at startup and passes the values to each module.
-
-# ─────────────────────────────────────────────────────────────────────────────
-# DATA
-# ─────────────────────────────────────────────────────────────────────────────
+# ═════════════════════════════════════════════════════════════════════════════
 data:
   # Directory containing raw SEN55 .pkl files (output of uart_logger.py)
   # and the BAM or AQS reference CSV.
@@ -99,11 +138,12 @@ export:
   # Copy this file into the firmware's include/ directory.
   c_header_path: ../../include/calib_scaler.h
 
-# ─────────────────────────────────────────────────────────────────────────────
+# ═════════════════════════════════════════════════════════════════════════════
 # PUBLIC DATA PIPELINE (EPA AQS)
+# Used by: pytorch_calibration/fetch_public_data.py, train_public.py
 # Run: python fetch_public_data.py   → downloads and pairs AQS data
 #      python train_public.py        → trains the public model
-# ─────────────────────────────────────────────────────────────────────────────
+# ═════════════════════════════════════════════════════════════════════════════
 public_data:
   # US state to download AQS data for.
   # Supported: CA TX NY FL CO WA OR AZ NV UT

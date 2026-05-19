@@ -148,25 +148,23 @@ Walk through the interactive prompts:
 3. Follow the browser-based authentication
 4. When asked for a shared folder, use the Google Drive folder link the team shares
 
-> All team members must name the remote `sensa` (this is set in `data_config.yaml`).
+> All team members must name the remote `sensa` (this is set in `tools/config.yaml`).
 > The team lead creates the Google Drive folder and shares it with everyone.
 
-**Step 3 — Create your local config**
+**Step 3 — Check your config**
 
-```bash
-cd tools/
-cp data_config.example.yaml data_config.yaml
-```
-
-Edit `data_config.yaml`:
+All tools read a single file, `tools/config.yaml`. The data-sync settings live
+under the `data_sync` section:
 
 ```yaml
-recording_dir: ~/sensa-recordings    # ← change this to wherever uart_logger saves files
-rclone_remote: sensa:sensa-data/raw  # ← keep this the same as the team's setup
-training_data_dir: pytorch_calibration/data/raw  # ← leave as-is
+data_sync:
+  recording_dir: ~/sensa-recordings    # ← where uart_logger saves files (~ = your home dir)
+  rclone_remote: sensa:sensa-data/raw  # ← keep this the same as the team's setup
+  training_data_dir: pytorch_calibration/data/raw  # ← leave as-is
 ```
 
-`data_config.yaml` is gitignored — your local paths never end up in the repo.
+The default `recording_dir` (`~/sensa-recordings`) works on any machine. Only
+change it if you save recordings somewhere else.
 
 **Step 4 — Verify rclone works**
 
@@ -332,7 +330,7 @@ Sites are matched by the AQS site identifier (state-county-site FIPS). Only hour
 where all required parameters have valid readings are kept.
 
 **Physics-based corrections** (applied before ML training, configured in
-`config.yaml` under `public_data.corrections`):
+`tools/config.yaml` under `public_data.corrections`):
 
 | Correction | Default | Formula |
 |---|---|---|

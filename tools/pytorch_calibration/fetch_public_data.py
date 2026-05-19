@@ -35,24 +35,37 @@ OUTPUT
 USAGE
 -----
     python fetch_public_data.py
-    python fetch_public_data.py --state CA --years 2020 2021 2022
+    python fetch_public_data.py --state OR --years 2020 2021 2022
     python fetch_public_data.py --include-gas
     python fetch_public_data.py --no-corrections
     python fetch_public_data.py --help
 
-NOTE ON CALIFORNIA DATA
------------------------
-California has some of the densest AQS monitoring networks in the US.
-Many sites in the South Coast (LA), Bay Area, and San Joaquin Valley run
-co-located FRM + continuous monitors, giving several hundred to a few
-thousand paired hourly rows per site per year.
+NOTE ON STATE SELECTION (why the default is Oregon)
+---------------------------------------------------
+This script needs sites where param 88101 (FRM/FEM reference) and param
+88502 (non-FRM continuous, the optical-sensor analog) report in the SAME
+UTC hour. Without that co-location there are no (optical, reference) pairs
+to train on, and merge_parameters() fails with "No co-located rows found".
 
-If param 88502 (non-FRM continuous) yields few co-located pairs, you can
-widen the feature set to also include FEM-continuous monitors (coded 88101
-with method types "FEM"). This is discussed in the code comments below.
+A nationwide scan of the 2021/2022 AQS bulk files showed that 88101 and
+88502 co-location is concentrated in a few states:
+
+    Oregon (FIPS 41)    — dominant; many sites with ~8,600 paired hours each
+    Washington (FIPS 53)
+    Iowa (FIPS 19)
+
+California, despite having the densest overall AQS network, runs FRM/FEM
+and non-FRM continuous monitors at SEPARATE sites — it yields zero paired
+rows and is not a usable state for this script.
+
+Oregon is therefore the default. For Oregon, the relative-humidity join
+(param 62201) is the limiting factor: RH is co-located at only ~3 sites,
+so the final dataset is ~14k rows. Add more years (--years 2021 2022 2023)
+for a larger dataset. See FINDINGS.md for the full investigation.
 """
 
 import argparse
+import os
 from pathlib import Path
 
 import pandas as pd
@@ -98,6 +111,7 @@ def _quality_filter(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def main() -> None:
+    script_dir = Path(__file__).resolve().parent
     parser = argparse.ArgumentParser(
         description=(
             "Download EPA AQS data and build a paired PM2.5 calibration dataset "
@@ -105,9 +119,10 @@ def main() -> None:
         )
     )
     parser.add_argument(
-        "--state", default="CA",
+        "--state", default="OR",
         choices=list(STATE_FIPS.keys()),
-        help="US state to download data for (default: CA).",
+        help="US state to download data for (default: OR). See the module "
+             "docstring for why Oregon is the default.",
     )
     parser.add_argument(
         "--years", nargs="+", type=int, default=[2021, 2022],
@@ -127,8 +142,8 @@ def main() -> None:
         help="Skip physics-based pre-corrections and save raw optical PM2.5.",
     )
     parser.add_argument(
-        "--config", default="config.yaml",
-        help="Path to config.yaml (default: config.yaml).",
+        "--config", default=str(script_dir.parent / "config.yaml"),
+        help="Path to the shared tools/config.yaml (default: tools/config.yaml).",
     )
     parser.add_argument(
         "--cache-dir", default="data/public/aqs_cache",
@@ -144,12 +159,18 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    with open(args.config) as f:
+    # Resolve user-supplied paths against the caller's cwd, then move into the
+    # script's own directory so any relative paths inside config.yaml resolve
+    # correctly no matter where this script was launched from.
+    config_path = Path(args.config).resolve()
+    cache_dir = Path(args.cache_dir).resolve()
+    out_dir = Path(args.out_dir).resolve()
+    os.chdir(script_dir)
+
+    with open(config_path) as f:
         cfg = yaml.safe_load(f)
 
     state_fips = STATE_FIPS[args.state]
-    cache_dir = Path(args.cache_dir)
-    out_dir = Path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
     # ── Decide which parameters to fetch ───────────────────────────────────

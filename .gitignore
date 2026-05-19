@@ -25,19 +25,16 @@ env/
 
 # ── ML training data and model artefacts ─────────────────────────────────────
 # The data/ directories are populated by prepare_data.py and uart_logger.py.
-# The models/ directory is populated by main.py during training.
+# The models/ directories are populated by main.py / train_public.py during
+# training (checkpoints, scaler, predictions.png).
 # None of these are source code — they are build outputs or raw data.
+tools/data/
 tools/pytorch_calibration/data/
 tools/pytorch_calibration/models/
+tools/pytorch_calibration/models_public/
 tools/sensa_tools.egg-info
 # Intermediate and final model files generated during export.
 # Regenerate with: python main.py --export-only
 *.onnx
 *.tflite
 *.pt
-
-# ── Data sync config (machine-specific paths) ─────────────────────────────────
-# data_config.yaml contains the local recording directory path, which is
-# different on each team member's machine. Copy data_config.example.yaml
-# and edit it locally — do not commit your personalised copy.
-tools/data_config.yaml

@@ -23,7 +23,7 @@ SETUP (one time per machine):
        - Windows: download the .exe from the site, add to PATH.
        - Linux/Mac: curl https://rclone.org/install.sh | sudo bash
     2. Run: rclone config
-       - New remote → name it "sensa" (must match rclone_remote in data_config.yaml)
+       - New remote → name it "sensa" (must match rclone_remote in tools/config.yaml)
        - Storage type: Google Drive (or whichever backend the team uses)
        - Follow the browser auth steps.
     3. Share the Google Drive folder with all team members.
@@ -49,26 +49,27 @@ import yaml
 
 def load_config(config_path: Path) -> dict:
     """
-    Load data_config.yaml. Exit with a helpful message if the file is missing
-    (the user probably has not run the setup step yet).
+    Load the data_sync section of tools/config.yaml.
+
+    Returns just the data_sync sub-dict, so callers see recording_dir,
+    rclone_remote and training_data_dir as top-level keys.
     """
     if not config_path.exists():
-        example = config_path.parent / "data_config.example.yaml"
         print(f"ERROR: {config_path} not found.")
-        print()
-        if example.exists():
-            print(f"Copy the example and edit it for your machine:")
-            print(f"    cp {example.name} data_config.yaml")
-        else:
-            print("Create a data_config.yaml with keys: recording_dir, rclone_remote, training_data_dir")
+        print("config.yaml is part of the repository — restore it with git.")
         sys.exit(1)
 
     with open(config_path, 'r') as f:
         cfg = yaml.safe_load(f)
 
+    if 'data_sync' not in cfg:
+        print(f"ERROR: {config_path} has no 'data_sync' section.")
+        sys.exit(1)
+
+    sync_cfg = cfg['data_sync']
     # Expand ~ in paths (e.g. ~/sensa-recordings → /home/user/sensa-recordings)
-    cfg['recording_dir'] = Path(cfg['recording_dir']).expanduser()
-    return cfg
+    sync_cfg['recording_dir'] = Path(sync_cfg['recording_dir']).expanduser()
+    return sync_cfg
 
 
 # ── rclone availability check ─────────────────────────────────────────────────
@@ -104,7 +105,7 @@ def find_sessions(recording_dir: Path) -> list[dict]:
     """
     if not recording_dir.exists():
         print(f"ERROR: Recording directory not found: {recording_dir}")
-        print("Check the 'recording_dir' value in data_config.yaml.")
+        print("Check the 'recording_dir' value under data_sync in tools/config.yaml.")
         sys.exit(1)
 
     pkl_files = sorted(recording_dir.glob("sen55_*.pkl"), key=lambda p: p.stat().st_mtime)
@@ -254,8 +255,8 @@ def main() -> None:
         description="Upload SEN55 recording sessions to the team's shared cloud storage."
     )
     parser.add_argument(
-        '--config', default=str(script_dir / 'data_config.yaml'),
-        help="Path to data_config.yaml (default: tools/data_config.yaml)"
+        '--config', default=str(script_dir / 'config.yaml'),
+        help="Path to the shared tools/config.yaml (default: tools/config.yaml)"
     )
     parser.add_argument(
         '--all', action='store_true',

@@ -79,6 +79,7 @@ To produce per-region or per-year CSVs, pass --out-dir when downloading:
 """
 
 import argparse
+import os
 import sys
 from pathlib import Path
 from typing import List, Optional
@@ -322,13 +323,22 @@ def main() -> None:
         "--no-export", action="store_true",
         help="Train the model but skip ONNX/TFLite export.",
     )
+    script_dir = Path(__file__).resolve().parent
     parser.add_argument(
-        "--config", default="config.yaml",
-        help="Path to config.yaml (default: config.yaml).",
+        "--config", default=str(script_dir.parent / "config.yaml"),
+        help="Path to the shared tools/config.yaml (default: tools/config.yaml).",
     )
     args = parser.parse_args()
 
-    with open(args.config) as f:
+    # Resolve user-supplied paths against the caller's cwd, then move into the
+    # script's own directory so the relative paths inside config.yaml
+    # (data/, models/, ../../include/) resolve correctly no matter where
+    # this script was launched from.
+    config_path = Path(args.config).resolve()
+    data_paths = [str(Path(p).resolve()) for p in args.data] if args.data else None
+    os.chdir(script_dir)
+
+    with open(config_path) as f:
         config = yaml.safe_load(f)
 
     device = get_device()
@@ -336,7 +346,7 @@ def main() -> None:
         config,
         device,
         export=not args.no_export,
-        data_paths=args.data,
+        data_paths=data_paths,
     )
 
 

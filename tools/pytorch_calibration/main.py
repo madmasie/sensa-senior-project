@@ -36,6 +36,7 @@ GPU NOTE:
 """
 
 import argparse
+import os
 import sys
 from pathlib import Path
 
@@ -57,7 +58,7 @@ from src.model import SensaCalibNet, count_parameters
 from src.train import train
 
 
-def load_config(path: str = "config.yaml") -> dict:
+def load_config(path: str) -> dict:
     """Load the YAML config file into a Python dict."""
     with open(path, 'r') as f:
         return yaml.safe_load(f)
@@ -306,13 +307,21 @@ def main() -> None:
         help="Generate synthetic data and run the full pipeline as a smoke test. "
              "No real sensor data needed."
     )
+    script_dir = Path(__file__).resolve().parent
     parser.add_argument(
-        '--config', default='config.yaml',
-        help="Path to the config YAML file (default: config.yaml)."
+        '--config', default=str(script_dir.parent / 'config.yaml'),
+        help="Path to the shared tools/config.yaml (default: tools/config.yaml)."
     )
     args = parser.parse_args()
 
-    config = load_config(args.config)
+    # Resolve the config path against the caller's cwd, then move into the
+    # script's own directory so the relative paths inside config.yaml
+    # (data/, models/, ../../include/) resolve correctly no matter where
+    # this script was launched from.
+    config_path = Path(args.config).resolve()
+    os.chdir(script_dir)
+
+    config = load_config(str(config_path))
     device = get_device()
 
     if args.demo:

@@ -77,6 +77,11 @@ def export_to_onnx(
         model,
         dummy_input,
         save_path,
+        # Force the legacy TorchScript exporter. Recent PyTorch defaults to the
+        # dynamo-based exporter, which requires the extra `onnxscript` package
+        # and emits a different graph style. opset_version=11 + dynamic_axes
+        # below are legacy-exporter idioms, and onnx2tf expects that graph.
+        dynamo=False,
         # opset_version=11 is the oldest version supported by onnx2tf.
         # Higher versions support newer ops but may not be supported by
         # downstream tools. 11 is the safe, widely compatible choice.

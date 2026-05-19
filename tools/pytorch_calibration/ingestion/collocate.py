@@ -75,13 +75,41 @@ def merge_parameters(
     base = _keep_primary_poc(dfs[primary_param], primary_param)[
         ["site_id", "timestamp", "latitude", "longitude", f"param_{primary_param}"]
     ]
+    print(
+        f"  Base param {primary_param}: {len(base):,} rows | "
+        f"{base['site_id'].nunique()} sites"
+    )
 
-    # Inner-join each feature parameter
+    # Inner-join each feature parameter, reporting how each step shrinks the
+    # set so an empty result can be traced to the parameter that caused it.
     for param in feature_params:
         feat_df = _keep_primary_poc(dfs[param], param)[
             ["site_id", "timestamp", f"param_{param}"]
         ]
+        # How much of the join key actually overlaps, before merging.
+        base_keys = set(zip(base["site_id"], base["timestamp"]))
+        feat_keys = set(zip(feat_df["site_id"], feat_df["timestamp"]))
+        shared_sites = base["site_id"].isin(feat_df["site_id"]).sum()
         base = base.merge(feat_df, on=["site_id", "timestamp"], how="inner")
+        print(
+            f"  + join param {param}: {len(base):,} rows | "
+            f"{base['site_id'].nunique()} sites "
+            f"(feature had {feat_df['site_id'].nunique()} sites; "
+            f"{len(base_keys & feat_keys):,} site-hour keys overlapped)"
+        )
+        if base.empty:
+            raise ValueError(
+                f"Join with parameter {param} produced zero rows.\n"
+                f"The reference set had {shared_sites:,} rows at sites that "
+                f"also appear in param {param}, but none matched on the same\n"
+                f"UTC hour. Param {param} is the parameter that collapses the "
+                f"dataset.\n"
+                "Consider:\n"
+                "  - Adding more years (--years 2019 2020 2021 2022)\n"
+                f"  - Dropping param {param} from the feature set if it is "
+                f"rarely co-located\n"
+                "  - Removing optional parameters (drop --include-gas)"
+            )
 
     if base.empty:
         raise ValueError(

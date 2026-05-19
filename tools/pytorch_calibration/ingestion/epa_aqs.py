@@ -37,6 +37,24 @@ PARAM = {
 # Reverse map for human-readable column names
 PARAM_NAME = {v: k for k, v in PARAM.items()}
 
+# AQS bulk hourly file token per parameter.
+#
+# Criteria pollutants are published one-file-per-numeric-code, but EPA bundles
+# meteorological parameters into named group files. So 88101 lives in
+# hourly_88101_{year}.zip, while temperature lives in hourly_TEMP_{year}.zip
+# and relative humidity in hourly_RH_DP_{year}.zip (shared with dewpoint).
+#
+# Group files contain MULTIPLE parameter codes — load_aqs_state() filters the
+# CSV down to the requested param_code after download.
+_FILE_TOKEN = {
+    88101: "88101",
+    88502: "88502",
+    62101: "TEMP",    # also holds 62103, 68105, etc.
+    62201: "RH_DP",   # also holds 62103 dewpoint
+    42401: "42401",
+    42602: "42602",
+}
+
 # State FIPS codes (zero-padded two-digit strings as stored in AQS)
 STATE_FIPS = {
     "CA": "06",
@@ -53,13 +71,25 @@ STATE_FIPS = {
 
 AQS_BASE_URL = "https://aqs.epa.gov/aqsweb/airdata"
 
-# Columns to load from the raw AQS CSV (subset keeps memory use reasonable)
-_USECOLS = [
-    "State Code", "County Code", "Site Num", "Parameter Code",
-    "POC", "Latitude", "Longitude",
-    "Date GMT", "Time GMT", "Sample Measurement",
-    "Units of Measure", "MDL", "Method Type",
-]
+# Columns to load from the raw AQS CSV (subset keeps memory use reasonable).
+# Names are stored normalized (lowercase, underscores) because AQS bulk files
+# are inconsistent: some use spaces ("State Code"), others underscores
+# ("State_Code"). The loader normalizes the file's header before matching.
+_USECOLS = {
+    "state_code", "county_code", "site_num", "parameter_code",
+    "poc", "latitude", "longitude",
+    "date_gmt", "time_gmt", "sample_measurement",
+    "units_of_measure", "mdl", "method_type",
+}
+
+# Subset of _USECOLS that must be parsed with an explicit dtype
+_STR_COLS = {"state_code", "county_code", "site_num"}
+_INT_COLS = {"parameter_code", "poc"}
+
+
+def _normalize(name: str) -> str:
+    """Normalize an AQS column name to lowercase with underscores."""
+    return name.strip().lower().replace(" ", "_")
 
 
 def download_aqs_hourly(
@@ -85,13 +115,17 @@ def download_aqs_hourly(
     """
     cache_dir = Path(cache_dir)
     cache_dir.mkdir(parents=True, exist_ok=True)
-    csv_path = cache_dir / f"hourly_{param_code}_{year}.csv"
+
+    # Cache by file token, not param code: a grouped file (e.g. TEMP) serves
+    # several params, so multiple param codes can share one cached download.
+    token = _FILE_TOKEN.get(param_code, str(param_code))
+    csv_path = cache_dir / f"hourly_{token}_{year}.csv"
 
     if csv_path.exists() and not force_download:
         print(f"  Cache hit: {csv_path.name}")
         return csv_path
 
-    url = f"{AQS_BASE_URL}/hourly_{param_code}_{year}.zip"
+    url = f"{AQS_BASE_URL}/hourly_{token}_{year}.zip"
     print(f"  Downloading {url}")
 
     resp = requests.get(url, stream=True, timeout=300)
@@ -150,28 +184,45 @@ def load_aqs_state(
         Filtered and cleaned DataFrame. May be empty if the state has no data
         for this parameter/year (e.g. SO2 is not monitored everywhere).
     """
+    # AQS bulk files vary between space- and underscore-separated headers.
+    # Peek at the header so usecols/dtype can be keyed to the file's actual
+    # column names, then normalize after reading.
+    header = pd.read_csv(csv_path, nrows=0).columns
+    norm = {raw: _normalize(raw) for raw in header}
+
+    missing = _USECOLS - set(norm.values())
+    if missing:
+        raise ValueError(
+            f"{csv_path.name} is missing expected AQS columns: {sorted(missing)}. "
+            f"Found columns: {list(header)}"
+        )
+
+    usecols = [raw for raw in header if norm[raw] in _USECOLS]
+    dtype = {raw: str for raw in header if norm[raw] in _STR_COLS}
+    dtype.update({raw: int for raw in header if norm[raw] in _INT_COLS})
+
     df = pd.read_csv(
         csv_path,
-        usecols=_USECOLS,
-        dtype={
-            "State Code":   str,
-            "County Code":  str,
-            "Site Num":     str,
-            "Parameter Code": int,
-            "POC":          int,
-        },
+        usecols=usecols,
+        dtype=dtype,
         low_memory=False,
     )
 
     # Normalize column names: lowercase, replace spaces with underscores
-    df.columns = [c.lower().replace(" ", "_") for c in df.columns]
+    df.columns = [norm[c] for c in df.columns]
+
+    # Filter to the requested parameter. Grouped meteorological files (TEMP,
+    # RH_DP) contain several parameter codes; criteria-pollutant files contain
+    # only one, so this is a no-op for them.
+    df = df[df["parameter_code"] == param_code]
 
     # Filter to target state
     state_code = state_fips.zfill(2)
     df = df[df["state_code"] == state_code].copy()
 
     if df.empty:
-        print(f"  WARNING: No rows for state '{state_fips}' in {csv_path.name}")
+        print(f"  WARNING: No rows for state '{state_fips}' "
+              f"param {param_code} in {csv_path.name}")
         return pd.DataFrame()
 
     # Build a stable site identifier

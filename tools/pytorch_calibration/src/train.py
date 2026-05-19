@@ -196,7 +196,7 @@ def train(
     # for 7 consecutive epochs. patience=7 gives the model time to escape a
     # flat region before we slow down.
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-        optimizer, mode='min', factor=0.5, patience=7, verbose=False
+        optimizer, mode='min', factor=0.5, patience=7 #, verbose=False
     )
 
     criterion = nn.MSELoss()
