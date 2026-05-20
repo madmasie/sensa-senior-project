@@ -21,7 +21,7 @@ _Ordered by dependency. Each item lists what needs to exist before you can start
 | BLE GATT service | `src/ble/ble_service.cpp` | Advertises as "Sensa"; notifies PM2.5 (float) and classification label (uint8) on each tick |
 | BLE full Reading characteristic | `src/ble/ble_service.cpp` | Added `...26aa` characteristic — sends all 9 sensor fields as packed 36-byte payload (uint32 ts + 8× float32) |
 | Pipeline unit tests | `test/native/test_pipeline/` | 6 tests covering warm-up, buffer-filling, classification, and last-reading state |
-| Web dashboard | `webapp/` | React + TypeScript + Vite; connects via Web Bluetooth (Chrome/Edge); live metric cards + charts for all 8 sensor fields |
+| Custom PCB support | `platformio.ini`, `src/main.cpp`, `include/sensor/sen55_sensor.h` | `sensa-pcb` build env; `SENSA_PCB` flag enables STATUS_LED (GPIO16), motor (GPIO10), buzzer (GPIO11); dev board RGB LED excluded from PCB build |
 
 ---
 

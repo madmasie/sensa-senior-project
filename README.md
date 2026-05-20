@@ -30,21 +30,30 @@ The system integrates a **Sensirion SEN55 environmental sensor** with an **ESP32
 
 ## Hardware
 
-- **Microcontroller:** ESP32-S3  
-  - Dual-core MCU  
-  - Wi-Fi + Bluetooth Low Energy  
-  - FreeRTOS support  
-  - TensorFlow Lite Micro compatible  
+The firmware supports two hardware targets selectable at build time.
 
-- **Environmental Sensor:** Sensirion SEN55  
-  - PM1 / PM2.5 / PM4 / PM10  
-  - VOC Index (1–500)  
-  - NOx Index (1–500)  
-  - Temperature & Relative Humidity  
-  - I²C interface  
+### Dev Board (default)
+- **Board:** RYMCU ESP32-S3-DevKitC-1
+- Used for early development and testing
+- Built-in addressable RGB LED on GPIO38 used as a heartbeat indicator
+- Build: `pio run`
 
-- **Power:** Rechargeable Li-ion battery  
-- **Enclosure:** Lightweight, ventilated, wearable form factor  
+### Custom Sensa PCB
+- **MCU module:** ESP32-S3-WROOM-1
+- **I²C:** SDA = GPIO8, SCL = GPIO9 (10 kΩ pull-ups to 3.3 V on-board)
+- **Alerts:** vibration motor via MOSFET on GPIO10; piezo buzzer on GPIO11
+- **Status LED:** GPIO16 (`STATUS_LED`) — blinks as heartbeat, flashes on boot
+- **Charge LED:** `LED_CHG` driven by MCP73831 charger IC (hardware-only, no firmware needed)
+- **USB:** native USB-C (GPIO19/20) with ESD protection and MCP73831 LiPo charging
+- **Power:** single-cell LiPo → boost to 5 V for SEN55; 3.3 V rail for ESP32 logic
+- Build: `pio run -e sensa-pcb`
+
+### Environmental Sensor (both targets)
+- **Sensirion SEN55** over I²C
+  - PM1 / PM2.5 / PM4 / PM10
+  - VOC Index (1–500)
+  - NOx Index (1–500)
+  - Temperature & Relative Humidity
 
 ---
 

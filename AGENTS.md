@@ -23,9 +23,11 @@ tools/                          # Python BLE client (legacy)
 
 ## Language & Toolchain
 - C++17, Arduino framework, PlatformIO
-- Target board: ESP32-S3 (`rymcu-esp32-s3-devkitc-1`)
-- Build: `pio run`
-- Upload: `pio run --target upload`
+- Two build targets:
+  - `rymcu-esp32-s3-devkitc-1` — original dev board (default)
+  - `sensa-pcb` — custom Sensa PCB (ESP32-S3-WROOM-1); enables motor, buzzer, STATUS_LED
+- Build: `pio run` (dev board) or `pio run -e sensa-pcb` (PCB)
+- Upload: `pio run --target upload` or `pio run -e sensa-pcb --target upload`
 - Serial monitor: `pio device monitor`
 - Run tests: `~/.platformio/penv/bin/pio test -e native`
 

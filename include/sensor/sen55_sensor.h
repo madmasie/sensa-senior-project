@@ -6,9 +6,19 @@
 #include "sensor/sensor.h"
 #include "types.h"
 
-// I2C pins for the ESP32-S3 DevKitC board
-#define SEN55_SDA_PIN 8
-#define SEN55_SCL_PIN 9
+// I2C pin assignments.
+// The SENSA_PCB flag is set in platformio.ini for the custom PCB build.
+// Both boards happen to use the same GPIO8/9 for I2C, but this block makes
+// the intent explicit and makes it easy to change either target independently.
+#ifdef SENSA_PCB
+  // Custom Sensa PCB: SDA=GPIO8, SCL=GPIO9 (pulled up to 3.3V with 10k resistors)
+  #define SEN55_SDA_PIN 8
+  #define SEN55_SCL_PIN 9
+#else
+  // RYMCU ESP32-S3-DevKitC-1 dev board
+  #define SEN55_SDA_PIN 8
+  #define SEN55_SCL_PIN 9
+#endif
 
 // The SEN55 I2C address is fixed at 0x69 (set by Sensirion in hardware).
 #define SEN55_I2C_ADDR 0x69
