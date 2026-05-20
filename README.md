@@ -48,12 +48,61 @@ The firmware supports two hardware targets selectable at build time.
 - **Power:** single-cell LiPo → boost to 5 V for SEN55; 3.3 V rail for ESP32 logic
 - Build: `pio run -e sensa-pcb`
 
+#### Alert behavior (PCB only)
+When air quality exceeds a threshold, the vibration motor and piezo buzzer fire together in short pulses. The number of pulses indicates severity:
+
+| Classification | Pulses |
+|---|---|
+| UNHEALTHY | 1 |
+| VERY_UNHEALTHY | 2 |
+| HAZARDOUS | 3 |
+
+A 30-second cooldown prevents repeated alerts while air quality stays bad.
+
 ### Environmental Sensor (both targets)
 - **Sensirion SEN55** over I²C
   - PM1 / PM2.5 / PM4 / PM10
   - VOC Index (1–500)
   - NOx Index (1–500)
   - Temperature & Relative Humidity
+
+---
+
+## Building & Flashing
+
+Choose the command set that matches your hardware:
+
+**Dev board (RYMCU ESP32-S3-DevKitC-1):**
+```bash
+pio run --target upload   # compile and flash
+pio device monitor        # open serial output
+```
+
+**Custom Sensa PCB (ESP32-S3-WROOM-1):**
+```bash
+pio run -e sensa-pcb --target upload   # compile and flash
+pio device monitor                     # open serial output
+```
+
+The `-e sensa-pcb` flag selects the PCB build environment, which enables the STATUS_LED, vibration motor, and buzzer. Without it, you get the dev board build.
+
+### First-time flashing the custom PCB
+
+The first time you flash a brand-new PCB, the ESP32 may not automatically enter programming mode. If the upload hangs or times out, follow these steps:
+
+1. Hold down the **BOOT button** on the PCB (connected to GPIO0)
+2. While holding BOOT, press and release the **RESET button** (EN)
+3. Release the **BOOT button**
+4. Now run the upload command — the ESP32 is now waiting for firmware
+
+After the first successful flash, future uploads should work without this — just plug in and run the command normally.
+
+### If you get a "port not found" or "permission denied" error (Linux/WSL)
+
+The PCB shows up as `/dev/ttyACM0` (or similar). If you see a permission error:
+```bash
+sudo chmod 666 /dev/ttyACM0
+```
 
 ---
 

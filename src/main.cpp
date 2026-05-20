@@ -24,30 +24,68 @@ static const uint32_t INTERVAL_MS = 1000;
 #define BUZZER_RESOLUTION 8   // 8-bit duty cycle (0–255)
 #define BUZZER_DUTY      128  // 50% duty cycle = clean square wave
 
-// How long the motor+buzzer pulse lasts (ms).
-#define ALERT_PULSE_MS 500
-
+// How long each motor+buzzer pulse lasts (ms).
+#define ALERT_PULSE_MS  150
+// Gap between pulses in a multi-burst alert (ms).
+#define ALERT_GAP_MS    150
 // Minimum time between alerts (ms). Prevents continuous firing while air is bad.
 #define ALERT_COOLDOWN_MS 30000
 
 // Tracks when the last alert fired so we can enforce the cooldown.
 static uint32_t last_alert_ms = 0;
 
-// Tracks when the alert pulse started so we can turn it off non-blocking.
-// 0 means no alert is currently active.
-static uint32_t alert_start_ms = 0;
+// --- Non-blocking burst state machine ---
+// Instead of using delay(), we track where we are in the burst pattern
+// and advance one step per loop() iteration based on elapsed time.
+static uint8_t  burst_total    = 0;  // how many pulses to fire total
+static uint8_t  burst_count    = 0;  // how many pulses fired so far
+static bool     burst_on       = false; // true = currently in a pulse, false = in a gap
+static uint32_t burst_timer_ms = 0;  // when the current pulse/gap started
 
-// Start an alert pulse if the cooldown has elapsed.
-// Does not use delay() — the pulse is turned off in loop() after ALERT_PULSE_MS.
-static void maybe_trigger_alert() {
+// Start a burst alert with `pulses` pulses if the cooldown has elapsed.
+static void maybe_trigger_alert(uint8_t pulses) {
     uint32_t now = millis();
-    // Enforce cooldown: don't re-trigger if we alerted recently.
     if (now - last_alert_ms < ALERT_COOLDOWN_MS) return;
 
-    digitalWrite(MOTOR_PIN, HIGH);
-    ledcWrite(BUZZER_CHANNEL, BUZZER_DUTY);  // start square wave tone
-    alert_start_ms = now;   // record when the pulse started
+    // Kick off the first pulse immediately.
+    burst_total    = pulses;
+    burst_count    = 0;
+    burst_on       = true;
+    burst_timer_ms = now;
     last_alert_ms  = now;
+
+    digitalWrite(MOTOR_PIN, HIGH);
+    ledcWrite(BUZZER_CHANNEL, BUZZER_DUTY);
+}
+
+// Called every loop() iteration to advance the burst state machine.
+// Turns the motor/buzzer on and off at the right times without blocking.
+static void update_alert() {
+    if (burst_total == 0) return;  // no active alert
+
+    uint32_t now = millis();
+
+    if (burst_on) {
+        // Currently in a pulse — check if it's time to turn off.
+        if (now - burst_timer_ms >= ALERT_PULSE_MS) {
+            digitalWrite(MOTOR_PIN, LOW);
+            ledcWrite(BUZZER_CHANNEL, 0);
+            burst_on       = false;
+            burst_timer_ms = now;
+            burst_count++;
+
+            // If we've fired all pulses, we're done.
+            if (burst_count >= burst_total) burst_total = 0;
+        }
+    } else {
+        // Currently in a gap — check if it's time to fire the next pulse.
+        if (now - burst_timer_ms >= ALERT_GAP_MS) {
+            digitalWrite(MOTOR_PIN, HIGH);
+            ledcWrite(BUZZER_CHANNEL, BUZZER_DUTY);
+            burst_on       = true;
+            burst_timer_ms = now;
+        }
+    }
 }
 
 #else
@@ -106,13 +144,8 @@ void loop() {
     uint32_t now = millis();
 
 #ifdef SENSA_PCB
-    // Turn off the alert pulse once ALERT_PULSE_MS has elapsed.
-    // This replaces the old delay()-based approach so the CPU isn't blocked.
-    if (alert_start_ms != 0 && (now - alert_start_ms >= ALERT_PULSE_MS)) {
-        digitalWrite(MOTOR_PIN, LOW);
-        ledcWrite(BUZZER_CHANNEL, 0);  // stop tone (duty = 0 → no output)
-        alert_start_ms = 0;
-    }
+    // Advance the burst state machine — turns motor/buzzer on/off at the right times.
+    update_alert();
 
     // Single short blink on STATUS_LED as a heartbeat once per pipeline tick.
     // We do this here so it's visible even when the sensor is still warming up.
@@ -138,17 +171,17 @@ void loop() {
         case Classification::MODERATE:      Serial.println("MODERATE");      break;
         case Classification::UNHEALTHY:     Serial.println("UNHEALTHY");
 #ifdef SENSA_PCB
-            maybe_trigger_alert();
+            maybe_trigger_alert(1);  // 1 short burst
 #endif
             break;
         case Classification::VERY_UNHEALTHY: Serial.println("VERY_UNHEALTHY");
 #ifdef SENSA_PCB
-            maybe_trigger_alert();
+            maybe_trigger_alert(2);  // 2 short bursts
 #endif
             break;
         case Classification::HAZARDOUS:     Serial.println("HAZARDOUS");
 #ifdef SENSA_PCB
-            maybe_trigger_alert();
+            maybe_trigger_alert(3);  // 3 short bursts
 #endif
             break;
         default:                            Serial.println("UNKNOWN");       break;
