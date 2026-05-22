@@ -97,3 +97,73 @@ curl -s -o /dev/null -w "%{http_code}\n" -I \
 If `fetch_public_data.py` prints `No rows for state ... param XXXXX`, the param
 code is absent from the (correct) downloaded file — check the code is right for
 that group file rather than assuming the download failed.
+
+## 5. Transfer-learning calibration — `finetune.py`
+
+### Summary
+
+`finetune.py` combines the two calibration data sources with transfer learning
+instead of training a single model on one source:
+
+1. **Pretrain** on EPA AQS data (`train_public.py`) — a large, diverse set of
+   co-located optical (88502) + reference (88101) pairs. Establishes the
+   general optical-PM → reference-PM correction.
+2. **Fine-tune** on local SEN55 + BAM co-location data (`finetune.py`) — small
+   but exactly our sensor. Nudges the pretrained weights to close the
+   SEN55-specific gap.
+
+Key implementation choices:
+
+- **3-feature model** (`pm2_5`, `temp`, `rh`) — the schema the AQS pretrained
+  model uses; the local CSV's other 5 SEN55 channels are dropped.
+- **Scaler is reused, never refit** — the AQS `MinMaxScaler` is applied to the
+  local data so inputs stay in the range the pretrained weights expect.
+- **Low learning rate** (`1e-4`, ~10× below from-scratch) so local data refines
+  rather than overwrites the AQS knowledge.
+- **Order is fixed**: AQS first, local last. The dataset trained on last has
+  the final say, and that must be our sensor.
+- Optional `--freeze-conv` adapts only the regression head for very small
+  local datasets.
+- Reports test-set metrics **before and after** fine-tuning to quantify the
+  actual gain. Exports straight to the firmware headers; `calibrate.cpp`
+  auto-detects the 3-feature model.
+
+### Pros
+
+- Uses the large AQS set for volume/diversity *and* local data for
+  sensor-specific accuracy — neither source alone is sufficient.
+- Correct transfer-learning order avoids catastrophic forgetting of the
+  local (deployment-relevant) data.
+- Single end-to-end model — no two-stage cascade, so no error propagation
+  between stages and no doubled int8/arena cost on the ESP32.
+- Reuses the entire `src/` stack (`dataset`, `train.validate`, `evaluate`,
+  `export`) — little new surface area to maintain.
+- Scaler reuse keeps the input domain consistent with pretraining (the most
+  common transfer-learning mistake, avoided by design).
+- Before/after evaluation makes the benefit measurable, not assumed.
+- Build-safe: until the model exists, the firmware runs in passthrough.
+
+### Cons / limitations
+
+- **3 features only.** Drops `pm1`, `pm4`, `pm10`, `voc`, `nox` — the
+  8-feature local model (`main.py`) could exploit particle-size-distribution
+  structure that this model cannot see.
+- **AQS optical monitor ≠ SEN55.** The 88502 instruments are research-grade;
+  the domain gap is closed only as well as the scarce local data allows.
+- **Pretrained prior is Oregon-specific.** Per finding #4, usable AQS
+  co-location is dominated by Oregon — the pretrained model carries a Pacific
+  NW climate/aerosol bias that fine-tuning must overcome.
+- **Local data is scarce.** Fine-tuning on a few hundred paired hours risks
+  overfitting; `--freeze-conv` mitigates this but limits how much the model
+  can adapt.
+- **Splitting eats scarce data.** Holding out val + test (`0.15` + `0.15`)
+  from an already-small local set leaves little for training.
+- **Scaler range mismatch.** Local conditions outside the AQS min/max are
+  squashed toward 0/1 by the reused scaler (and clamped again on-device).
+- **BatchNorm on small data.** Full fine-tuning re-estimates BatchNorm
+  running stats on the small local set — noisier than the AQS estimates.
+- **Site/unit specific.** The fine-tuned model is calibrated to this SEN55
+  unit and deployment environment; another unit or location needs new
+  co-location data and a re-run.
+- **Export needs `onnx2tf`** (not in the nix env) — requires the separate
+  venv described in `flake.nix`'s shellHook.

@@ -53,7 +53,12 @@ from src.dataset import (
     split_dataset,
 )
 from src.evaluate import evaluate, plot_predictions
-from src.export import convert_onnx_to_tflite, export_scaler_as_c_header, export_to_onnx
+from src.export import (
+    convert_onnx_to_tflite,
+    export_scaler_as_c_header,
+    export_tflite_as_c_header,
+    export_to_onnx,
+)
 from src.model import SensaCalibNet, count_parameters
 from src.train import train
 
@@ -239,16 +244,21 @@ def run_pipeline(config: dict, device: torch.device, export: bool = True) -> Non
     scaler = load_scaler(str(model_dir / "scaler.pkl"))
     export_scaler_as_c_header(scaler, export_cfg['c_header_path'])
 
+    # Step 4: Embed the .tflite model itself as a C byte array for firmware
+    export_tflite_as_c_header(tflite_path, export_cfg['c_model_path'])
+
     print("\n── Done ───────────────────────────────────────────────────────")
     print(f"  Trained model     : {checkpoint}")
     print(f"  ONNX model        : {onnx_path}")
     print(f"  TFLite model      : {tflite_path}")
     print(f"  C scaler header   : {export_cfg['c_header_path']}")
+    print(f"  C model header    : {export_cfg['c_model_path']}")
     print()
     print("  Next steps:")
-    print("  1. Copy the .tflite file into the firmware project.")
-    print("  2. Copy include/calib_scaler.h into include/.")
-    print("  3. Use the TFLite Micro runtime to run inference on the ESP32-S3.")
+    print("  The two C headers above are written straight into the firmware's")
+    print("  include/ folder. src/ml/calibrate.cpp picks them up automatically")
+    print("  on the next `pio run`. Just enable the TFLite Micro library in")
+    print("  platformio.ini (see the comment there), then build and flash.")
 
 
 def run_export_only(config: dict) -> None:
@@ -288,6 +298,7 @@ def run_export_only(config: dict) -> None:
 
     scaler = load_scaler(str(scaler_path))
     export_scaler_as_c_header(scaler, export_cfg['c_header_path'])
+    export_tflite_as_c_header(tflite_path, export_cfg['c_model_path'])
 
 
 def main() -> None:

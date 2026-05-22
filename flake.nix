@@ -89,6 +89,7 @@
           prepare-data      = mkScriptApp { dir = "tools/pytorch_calibration"; script = "prepare_data.py"; };
           train-public      = mkScriptApp { dir = "tools/pytorch_calibration"; script = "train_public.py"; };
           train-local       = mkScriptApp { dir = "tools/pytorch_calibration"; script = "main.py"; };
+          finetune          = mkScriptApp { dir = "tools/pytorch_calibration"; script = "finetune.py"; };
           paper-figures     = mkScriptApp { dir = "tools/pytorch_calibration"; script = "paper_figures.py"; };
         };
 
@@ -109,6 +110,7 @@
             echo "  nix run .#fetch-public-data        # download + pair AQS data"
             echo "  nix run .#train-public             # train 3-feature model"
             echo "  nix run .#prepare-data             # pair SEN55 .pkl with BAM CSV"
+            echo "  nix run .#finetune -- --no-export  # transfer-learn AQS model on local data"
             echo "  nix run .#train-local -- --no-export   # train 8-feature model"
             echo "  nix run .#paper-figures -- --demo  # generate paper figures"
             echo "  nix run .#uart-logger -- --port /dev/ttyUSB0"

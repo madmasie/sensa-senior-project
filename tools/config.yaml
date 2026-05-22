@@ -135,8 +135,12 @@ export:
   quantize: true
 
   # Path where the generated C header (normalization constants) will be written.
-  # Copy this file into the firmware's include/ directory.
+  # This points straight into the firmware's include/ directory.
   c_header_path: ../../include/calib_scaler.h
+
+  # Path where the .tflite model is written as a C byte array header.
+  # src/ml/calibrate.cpp #includes this to embed the model in firmware flash.
+  c_model_path: ../../include/calib_model.h
 
 # ═════════════════════════════════════════════════════════════════════════════
 # PUBLIC DATA PIPELINE (EPA AQS)
@@ -199,3 +203,58 @@ public_data:
     tflite_file: calibration_public.tflite
     quantize: true
     c_header_path: ../../include/calib_scaler_public.h
+    c_model_path: ../../include/calib_model_public.h
+
+# ═════════════════════════════════════════════════════════════════════════════
+# TRANSFER LEARNING — PRETRAIN ON AQS, FINE-TUNE ON LOCAL SEN55 + BAM
+# Used by: pytorch_calibration/finetune.py
+# Run: python train_public.py   → produces the pretrained AQS model
+#      python prepare_data.py   → produces the local paired dataset
+#      python finetune.py       → fine-tunes the AQS model on local data
+#
+# This combines both data sources the correct way round: the large, diverse
+# AQS dataset establishes the general optical→reference correction, then the
+# small but exactly-our-sensor local dataset refines it. The fine-tuned model
+# keeps the 3-feature schema of the public model above.
+# ═════════════════════════════════════════════════════════════════════════════
+finetune:
+  # The pretrained AQS model to start from (output of train_public.py).
+  # These names/dir match public_data.export above.
+  pretrained_dir: models_public
+  pretrained_checkpoint: best_model_public.pt
+  pretrained_scaler: scaler.pkl
+
+  # The local SEN55 + BAM paired dataset (output of prepare_data.py).
+  local_paired_file: data/paired/paired_dataset.csv
+
+  # Fine-tuning learning rate. Deliberately ~10× lower than training.learning_rate
+  # so the pretrained weights are nudged toward our sensor, not overwritten.
+  learning_rate: 1.0e-4
+
+  # L2 weight decay (overfitting penalty) — same idea as in the training block.
+  weight_decay: 1.0e-4
+
+  # Maximum fine-tuning epochs. Early stopping usually ends sooner.
+  epochs: 100
+
+  # Stop fine-tuning if validation loss has not improved for this many epochs.
+  early_stopping_patience: 15
+
+  # Freeze the convolutional feature extractor and fine-tune ONLY the
+  # regression head. Leave false for full fine-tuning (recommended — the low
+  # learning rate above already guards against overfitting). Set true only if
+  # the local dataset is very small and you see overfitting (validation loss
+  # far above training loss). The --freeze-conv command-line flag overrides this.
+  freeze_conv: false
+
+  # Output paths for the fine-tuned model. This is the model intended for
+  # deployment, so its C headers are written to the firmware include/ paths
+  # that src/ml/calibrate.cpp reads (NOT the _public.h paths).
+  export:
+    model_dir: models_finetuned
+    pytorch_checkpoint: best_model_finetuned.pt
+    onnx_file: calibration_finetuned.onnx
+    tflite_file: calibration_finetuned.tflite
+    quantize: true
+    c_header_path: ../../include/calib_scaler.h
+    c_model_path: ../../include/calib_model.h
