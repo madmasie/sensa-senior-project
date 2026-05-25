@@ -31,17 +31,20 @@ function randInt(min: number, max: number) {
 
 function fakeReading(pm25Target: number, prev: SensaReading | null): SensaReading {
   const jitter = (range: number) => (Math.random() - 0.5) * range;
-  const pm25 = Math.max(0, pm25Target + jitter(4));
+  // Nudge current pm25 toward the target by 15% each tick — gradual drift
+  // instead of an instant jump. Small jitter on top keeps it looking noisy.
+  const prevPm25 = prev?.pm25 ?? pm25Target;
+  const pm25 = Math.max(0, prevPm25 + 0.15 * (pm25Target - prevPm25) + jitter(2));
   return {
     ts:    Date.now(),
     pm25,
-    pm1:   pm25 * 0.6  + jitter(1),
-    pm4:   pm25 * 1.2  + jitter(1),
-    pm10:  pm25 * 1.5  + jitter(2),
-    tempC: (prev?.tempC ?? 22) + jitter(0.4),
-    rh:    (prev?.rh    ?? 45) + jitter(2),
-    voc:   100 + pm25 * 0.5 + jitter(10),
-    nox:   10  + pm25 * 0.1 + jitter(3),
+    pm1:   pm25 * 0.6  + jitter(0.5),
+    pm4:   pm25 * 1.2  + jitter(0.5),
+    pm10:  pm25 * 1.5  + jitter(1),
+    tempC: (prev?.tempC ?? 22) + jitter(0.2),
+    rh:    (prev?.rh    ?? 45) + jitter(1),
+    voc:   100 + pm25 * 0.5 + jitter(5),
+    nox:   10  + pm25 * 0.1 + jitter(2),
   };
 }
 
