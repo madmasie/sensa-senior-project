@@ -3,17 +3,31 @@ import type { SensaState, SensaReading, AqiLabel } from "./useSensa";
 
 const HISTORY_MAX = 60;
 
-// PM2.5 centre values (µg/m³) for each AQI phase, in order.
-// The demo cycles through all 5 levels, spending PHASE_DURATION_S seconds each.
-const PHASES: { label: AqiLabel; pm25: number }[] = [
-  { label: "GOOD",          pm25:   5 },
-  { label: "MODERATE",      pm25:  20 },
-  { label: "UNHEALTHY",     pm25:  80 },
-  { label: "VERY_UNHEALTHY",pm25: 175 },
-  { label: "HAZARDOUS",     pm25: 260 },
+// Each phase: which AQI level and how many seconds to stay there.
+// The sequence is hand-crafted to feel like a realistic outdoor walk —
+// starts clean, drifts up, dips back, climbs again, etc.
+// Timings are randomized at runtime within the [min, max] range below.
+const SEQUENCE: { label: AqiLabel; pm25: number; minS: number; maxS: number }[] = [
+  { label: "GOOD",           pm25:   5, minS: 8,  maxS: 14 },
+  { label: "MODERATE",       pm25:  20, minS: 3,  maxS:  6 },
+  { label: "GOOD",           pm25:   5, minS: 4,  maxS:  8 },
+  { label: "MODERATE",       pm25:  20, minS: 6,  maxS: 12 },
+  { label: "UNHEALTHY",      pm25:  80, minS: 3,  maxS:  5 },
+  { label: "MODERATE",       pm25:  20, minS: 2,  maxS:  4 },
+  { label: "UNHEALTHY",      pm25:  80, minS: 5,  maxS: 10 },
+  { label: "VERY_UNHEALTHY", pm25: 175, minS: 3,  maxS:  6 },
+  { label: "UNHEALTHY",      pm25:  80, minS: 2,  maxS:  5 },
+  { label: "VERY_UNHEALTHY", pm25: 175, minS: 6,  maxS: 10 },
+  { label: "HAZARDOUS",      pm25: 260, minS: 4,  maxS:  8 },
+  { label: "VERY_UNHEALTHY", pm25: 175, minS: 3,  maxS:  6 },
+  { label: "UNHEALTHY",      pm25:  80, minS: 4,  maxS:  8 },
+  { label: "MODERATE",       pm25:  20, minS: 5,  maxS: 10 },
+  { label: "GOOD",           pm25:   5, minS: 8,  maxS: 14 },
 ];
 
-const PHASE_DURATION_S = 3; // seconds per AQI level → full cycle = 15 s
+function randInt(min: number, max: number) {
+  return Math.floor(Math.random() * (max - min + 1)) + min;
+}
 
 function fakeReading(pm25Target: number, prev: SensaReading | null): SensaReading {
   const jitter = (range: number) => (Math.random() - 0.5) * range;
@@ -39,36 +53,34 @@ export function useDemo() {
     history: [],
   });
 
-  const intervalRef  = useRef<ReturnType<typeof setInterval> | null>(null);
-  const phaseRef     = useRef(0);   // current phase index
-  const ticksInPhase = useRef(0);   // how many 1-s ticks spent in this phase
+  const intervalRef    = useRef<ReturnType<typeof setInterval> | null>(null);
+  const phaseRef       = useRef(0);
+  const ticksInPhase   = useRef(0);
+  const phaseDuration  = useRef(randInt(SEQUENCE[0].minS, SEQUENCE[0].maxS));
 
   const startDemo = useCallback(() => {
-    phaseRef.current     = 0;
-    ticksInPhase.current = 0;
+    phaseRef.current      = 0;
+    ticksInPhase.current  = 0;
+    phaseDuration.current = randInt(SEQUENCE[0].minS, SEQUENCE[0].maxS);
 
-    const phase0 = PHASES[0];
-    const r0 = fakeReading(phase0.pm25, null);
-    setState({ connected: true, label: phase0.label, latest: r0, history: [r0] });
+    const p0 = SEQUENCE[0];
+    const r0 = fakeReading(p0.pm25, null);
+    setState({ connected: true, label: p0.label, latest: r0, history: [r0] });
 
     intervalRef.current = setInterval(() => {
-      // Advance phase after PHASE_DURATION_S ticks
       ticksInPhase.current++;
-      if (ticksInPhase.current >= PHASE_DURATION_S) {
+      if (ticksInPhase.current >= phaseDuration.current) {
         ticksInPhase.current = 0;
-        phaseRef.current = (phaseRef.current + 1) % PHASES.length;
+        phaseRef.current = (phaseRef.current + 1) % SEQUENCE.length;
+        const next = SEQUENCE[phaseRef.current];
+        phaseDuration.current = randInt(next.minS, next.maxS);
       }
 
-      const { label, pm25 } = PHASES[phaseRef.current];
+      const { label, pm25 } = SEQUENCE[phaseRef.current];
 
       setState(s => {
         const r = fakeReading(pm25, s.latest);
-        return {
-          ...s,
-          label,
-          latest: r,
-          history: [...s.history.slice(-(HISTORY_MAX - 1)), r],
-        };
+        return { ...s, label, latest: r, history: [...s.history.slice(-(HISTORY_MAX - 1)), r] };
       });
     }, 1000);
   }, []);
