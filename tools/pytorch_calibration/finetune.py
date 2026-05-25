@@ -131,6 +131,37 @@ def freeze_conv_block(model: SensaCalibNet) -> None:
         param.requires_grad = False
 
 
+def freeze_all_but_head_block(model: SensaCalibNet) -> None:
+    """
+    Freeze everything except the final Linear layer of the regression head.
+
+    WHEN TO USE THIS:
+        With *extremely* little data (e.g. ~17 paired hours), even
+        `--freeze-conv` leaves ~545 trainable parameters — far too many for
+        the data to constrain. This freezes the conv block AND the first
+        linear of the regressor, leaving only the final `Linear(16→1)`
+        layer trainable (16 weights + 1 bias = **17 parameters**). At that
+        scale the NN reduces to a 16-feature affine regression on top of
+        the AQS-pretrained feature embedding — comparable in capacity to a
+        plain linear baseline but with the benefit of AQS-learned features.
+
+    WHAT GETS FROZEN:
+        - conv_block             — both Conv1d + BatchNorm + ReLU stages
+        - regressor[0]           — Linear(n_channels*2 → n_channels)
+        - regressor[1]           — ReLU (no params anyway)
+
+    WHAT STAYS TRAINABLE:
+        - regressor[-1]          — Linear(n_channels → 1), the head.
+    """
+    for param in model.conv_block.parameters():
+        param.requires_grad = False
+    # The regressor is nn.Sequential(Linear, ReLU, Linear).
+    # Freeze every layer except the final one.
+    for layer in list(model.regressor)[:-1]:
+        for param in layer.parameters():
+            param.requires_grad = False
+
+
 def finetune_loop(
     model: SensaCalibNet,
     train_loader: DataLoader,
@@ -257,7 +288,8 @@ def finetune_loop(
 
 
 def run_finetune(config: dict, device: torch.device,
-                 export: bool = True, freeze_conv: bool = False) -> None:
+                 export: bool = True, freeze_conv: bool = False,
+                 freeze_all_but_head: bool = False) -> None:
     """
     Load the pretrained AQS model, fine-tune it on local SEN55+BAM data,
     evaluate the before/after improvement, and export for the firmware.
@@ -365,7 +397,12 @@ def run_finetune(config: dict, device: torch.device,
     evaluate(model, test_loader, device, split_name="local test — BEFORE fine-tuning")
 
     # ── Fine-tune ───────────────────────────────────────────────────────────
-    if freeze_conv:
+    if freeze_all_but_head:
+        freeze_all_but_head_block(model)
+        n_trainable = count_parameters(model)
+        print(f"\n  All-but-head FROZEN — only the final linear layer "
+              f"is fine-tuned ({n_trainable:,} of {n_total:,} parameters).")
+    elif freeze_conv:
         freeze_conv_block(model)
         n_trainable = count_parameters(model)
         print(f"\n  Conv feature extractor FROZEN — "
@@ -374,7 +411,10 @@ def run_finetune(config: dict, device: torch.device,
         print(f"\n  Full fine-tuning — all {n_total:,} parameters will be updated.")
 
     print("\n── Fine-tuning on local data ────────────────────────────────────")
-    model = finetune_loop(model, train_loader, val_loader, ft_cfg, device, freeze_conv)
+    # Conv block is in eval mode during training iff it is frozen — needed for
+    # proper BatchNorm handling. Both freeze modes freeze the conv block.
+    conv_is_frozen = freeze_conv or freeze_all_but_head
+    model = finetune_loop(model, train_loader, val_loader, ft_cfg, device, conv_is_frozen)
 
     # ── After: re-evaluate on the same local test set ───────────────────────
     print("\n── Result: fine-tuned model on the local test set ───────────────")
@@ -437,6 +477,7 @@ def run_finetune_cv(
     device: torch.device,
     k_folds: int,
     freeze_conv: bool,
+    freeze_all_but_head: bool = False,
 ) -> None:
     """
     K-fold cross-validation for fine-tuning.
@@ -586,12 +627,16 @@ def run_finetune_cv(
             n_channels=model_cfg["n_channels"],
         )
         model.load_state_dict(pretrained_state)
-        if freeze_conv:
+        if freeze_all_but_head:
+            freeze_all_but_head_block(model)
+        elif freeze_conv:
             freeze_conv_block(model)
 
+        # The conv block is in eval mode during training iff it is frozen.
+        conv_is_frozen = freeze_conv or freeze_all_but_head
         fold_ckpt = fold_dir / f"fold_{fold_idx:02d}.pt"
         model = finetune_loop(
-            model, train_loader, val_loader, ft_cfg, device, freeze_conv,
+            model, train_loader, val_loader, ft_cfg, device, conv_is_frozen,
             checkpoint_path=fold_ckpt, verbose=False,
         )
 
@@ -702,6 +747,37 @@ def run_finetune_cv(
     plt.close()
     print(f"\n  Saved CV diagnostic plot → {plot_path}")
     print(f"  Per-fold checkpoints in  → {fold_dir}")
+
+    # Persist the held-out predictions + metrics so paper_figures.py (and any
+    # downstream analysis) can reconstruct the run without retraining.
+    import json
+    results_path = Path(ft_cfg["export"]["model_dir"]) / "cv_results.json"
+    fold_assignment = np.full(len(all_preds), -1, dtype=int)
+    for fold_idx, (_, test_idx) in enumerate(kf.split(df_shuffled), start=1):
+        fold_assignment[test_idx] = fold_idx
+    if freeze_all_but_head:
+        freeze_mode = "all_but_head"
+    elif freeze_conv:
+        freeze_mode = "conv"
+    else:
+        freeze_mode = "none"
+    with open(results_path, "w") as f:
+        json.dump({
+            "method":      "finetuned_nn",
+            "freeze_mode": freeze_mode,
+            "k_folds":     k_folds,
+            "n_samples":   int(len(all_preds)),
+            "aggregate":   {"mae": agg_mae, "rmse": agg_rmse,
+                            "mbe": agg_mbe, "r2": agg_r2},
+            "per_fold":    per_fold_metrics,
+            "predictions": [
+                {"fold": int(fold_assignment[i]),
+                 "reference":  float(all_targets[i]),
+                 "prediction": float(all_preds[i])}
+                for i in range(len(all_preds))
+            ],
+        }, f, indent=2)
+    print(f"  CV results JSON          → {results_path}")
     print("\n  CV mode does not export a deployable model — rerun without")
     print("  --cv once the CV numbers look acceptable.")
 
@@ -721,6 +797,14 @@ def main() -> None:
         help="Freeze the conv feature extractor; fine-tune only the "
              "regression head. Use when local data is very scarce. "
              "Overrides finetune.freeze_conv in config.yaml.",
+    )
+    parser.add_argument(
+        "--freeze-all-but-head", action="store_true",
+        help="Freeze everything except the final linear layer "
+             "(Linear(n_channels → 1)). Leaves only ~17 trainable parameters "
+             "— appropriate for *very* small local datasets (~17 samples) "
+             "where even --freeze-conv overfits. Mutually exclusive with "
+             "--freeze-conv (this flag wins if both are set).",
     )
     parser.add_argument(
         "--cv", type=int, metavar="K",
@@ -751,12 +835,17 @@ def main() -> None:
 
     # Command-line --freeze-conv overrides the config default.
     freeze_conv = args.freeze_conv or config["finetune"].get("freeze_conv", False)
+    freeze_all_but_head = args.freeze_all_but_head
 
     device = get_device()
     if args.cv is not None:
-        run_finetune_cv(config, device, k_folds=args.cv, freeze_conv=freeze_conv)
+        run_finetune_cv(config, device, k_folds=args.cv,
+                        freeze_conv=freeze_conv,
+                        freeze_all_but_head=freeze_all_but_head)
     else:
-        run_finetune(config, device, export=not args.no_export, freeze_conv=freeze_conv)
+        run_finetune(config, device, export=not args.no_export,
+                     freeze_conv=freeze_conv,
+                     freeze_all_but_head=freeze_all_but_head)
 
 
 if __name__ == "__main__":

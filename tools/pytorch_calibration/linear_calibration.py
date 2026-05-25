@@ -53,9 +53,48 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+import yaml
 from sklearn.linear_model import LinearRegression
 from sklearn.metrics import r2_score
 from sklearn.model_selection import KFold
+
+
+def crilley_humidity_correction(
+    pm: np.ndarray, rh: np.ndarray, kappa: float,
+    rh_clamp: float = 95.0,
+) -> np.ndarray:
+    """
+    Apply the Crilley/Köhler hygroscopic-growth correction to optical PM
+    readings.
+
+    The standard model (Crilley et al. 2018, EPA PurpleAir guidance)
+    assumes that ambient aerosol takes up water above ~50% RH and that
+    optical sensors see the swollen particle. Working backwards:
+
+        pm_dry = pm_observed / (1 + κ · RH_frac / (1 - RH_frac))
+
+    where `κ` (kappa) is the aerosol hygroscopicity parameter. Typical
+    values are 0.3–0.8; 0.5 is the EPA default for general use.
+
+    Above ~95 % RH the correction diverges (1/(1-RH_frac) → ∞), so we
+    clamp RH at `rh_clamp` percent before applying the formula.
+    """
+    rh_clamped = np.minimum(rh, rh_clamp)
+    rh_frac = rh_clamped / 100.0
+    growth_factor = 1.0 + kappa * rh_frac / (1.0 - rh_frac)
+    return pm / growth_factor
+
+
+def load_default_kappa(config_path: Path) -> float:
+    """Read public_data.corrections.humidity.kappa from tools/config.yaml."""
+    if not config_path.exists():
+        return 0.5  # EPA default
+    with open(config_path) as f:
+        cfg = yaml.safe_load(f) or {}
+    try:
+        return float(cfg["public_data"]["corrections"]["humidity"]["kappa"])
+    except (KeyError, TypeError, ValueError):
+        return 0.5
 
 
 def cv_predictions(
@@ -63,14 +102,15 @@ def cv_predictions(
     y: np.ndarray,
     k_folds: int,
     seed: int,
-) -> tuple[np.ndarray, list[dict]]:
+) -> tuple[np.ndarray, np.ndarray, list[dict]]:
     """
     Run K-fold (or LOO if k_folds >= N) CV with OLS linear regression.
 
     Returns:
-        held_out_preds: array of length N with each sample's prediction
-                        from a fold where it was held out.
-        per_fold:       list of {'fold', 'n_test', 'mae', 'rmse', 'mbe'} dicts.
+        held_out_preds:  array of length N with each sample's prediction
+                         from a fold where it was held out.
+        fold_assignment: array of length N giving each sample's fold index.
+        per_fold:        list of {'fold', 'n_test', 'mae', 'rmse', 'mbe'} dicts.
     """
     n = len(y)
     if k_folds > n:
@@ -83,6 +123,7 @@ def cv_predictions(
 
     kf = KFold(n_splits=k_folds, shuffle=False)
     preds = np.full(n, np.nan, dtype=np.float64)
+    fold_assignment = np.full(n, -1, dtype=int)
     per_fold: list[dict] = []
 
     for fold_idx, (train_idx, test_idx) in enumerate(kf.split(X_shuf), start=1):
@@ -94,6 +135,7 @@ def cv_predictions(
         # the final aggregate aligns with the input arrays.
         original_rows = order[test_idx]
         preds[original_rows] = fold_preds
+        fold_assignment[original_rows] = fold_idx
 
         err = fold_preds - y_shuf[test_idx]
         per_fold.append({
@@ -104,7 +146,7 @@ def cv_predictions(
             "mbe":    float(np.mean(err)),
         })
 
-    return preds, per_fold
+    return preds, fold_assignment, per_fold
 
 
 def summarise(name: str, preds: np.ndarray, targets: np.ndarray) -> dict:
@@ -213,6 +255,20 @@ def main() -> None:
         help="Where to write the plot and coefficient JSON "
              "(default: models_linear).",
     )
+    parser.add_argument(
+        "--humidity-correction", action="store_true",
+        help="Apply the Crilley/Köhler hygroscopic-growth correction "
+             "(pm_dry = pm / (1 + κ·RH/(100-RH))) to the pm2_5 input "
+             "before fitting. Requires an 'rh' column in the paired CSV. "
+             "Useful for very small datasets where humidity-driven errors "
+             "would otherwise force extra free parameters.",
+    )
+    parser.add_argument(
+        "--kappa", type=float, default=None,
+        help="Hygroscopicity parameter for --humidity-correction. "
+             "Default reads public_data.corrections.humidity.kappa from "
+             "tools/config.yaml (typically 0.5).",
+    )
     args = parser.parse_args()
 
     csv_path = Path(args.csv)
@@ -231,10 +287,34 @@ def main() -> None:
         )
 
     # Drop rows where any required column is null — keeps OLS happy.
-    df = df.dropna(subset=args.features + [args.target]).reset_index(drop=True)
+    needed = list(args.features) + [args.target]
+    if args.humidity_correction:
+        needed.append("rh")
+    df = df.dropna(subset=needed).reset_index(drop=True)
     n = len(df)
     if n < 3:
         raise SystemExit(f"ERROR: need at least 3 paired rows, got {n}.")
+
+    # ── Optional humidity correction ────────────────────────────────────────
+    # Applied to BOTH the pm2_5 column (used as a regression feature) and the
+    # raw-sensor reference plot column, so the displayed comparison reflects
+    # the corrected sensor reading.
+    humidity_meta: dict | None = None
+    if args.humidity_correction:
+        if "rh" not in df.columns:
+            raise SystemExit("ERROR: --humidity-correction requires an "
+                             "'rh' column in the paired CSV.")
+        if "pm2_5" not in df.columns:
+            raise SystemExit("ERROR: --humidity-correction requires a "
+                             "'pm2_5' column to correct.")
+        config_path = Path(__file__).resolve().parent.parent / "config.yaml"
+        kappa = args.kappa if args.kappa is not None else load_default_kappa(config_path)
+        rh = df["rh"].to_numpy(dtype=np.float64)
+        df["pm2_5"] = crilley_humidity_correction(
+            df["pm2_5"].to_numpy(dtype=np.float64), rh, kappa=kappa,
+        )
+        humidity_meta = {"kappa": kappa, "rh_clamp": 95.0}
+        print(f"\n  Applied Crilley/Köhler humidity correction with κ = {kappa:.3f}")
 
     X = df[args.features].to_numpy(dtype=np.float64)
     y = df[args.target].to_numpy(dtype=np.float64)
@@ -248,7 +328,9 @@ def main() -> None:
     print(f"CV mode: {mode}")
 
     # ── Cross-validated metrics ─────────────────────────────────────────────
-    cv_preds, per_fold = cv_predictions(X, y, k_folds=k_folds, seed=args.seed)
+    cv_preds, fold_assignment, per_fold = cv_predictions(
+        X, y, k_folds=k_folds, seed=args.seed,
+    )
     print(f"\n  Per-fold MAE: " +
           " ".join(f"{m['mae']:5.2f}" for m in per_fold))
     metrics_cv = summarise(f"{mode} cross-validation", cv_preds, y)
@@ -272,17 +354,28 @@ def main() -> None:
     # ── Persist coefficients + metrics ──────────────────────────────────────
     out_dir = Path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
-    json_path = out_dir / "linear_calibration.json"
+    suffix = "_humidity" if args.humidity_correction else ""
+    json_path = out_dir / f"linear_calibration{suffix}.json"
+    method_label = "linear_humidity" if args.humidity_correction else "linear"
     with open(json_path, "w") as f:
         json.dump({
-            "features":   args.features,
-            "target":     args.target,
-            "n_samples":  n,
-            "cv_mode":    mode,
-            "coef":       [float(c) for c in final.coef_],
-            "intercept":  float(final.intercept_),
-            "cv_metrics": metrics_cv,
-            "per_fold":   per_fold,
+            "method":      method_label,
+            "humidity_correction": humidity_meta,
+            "features":    args.features,
+            "target":      args.target,
+            "n_samples":   n,
+            "k_folds":     k_folds,
+            "cv_mode":     mode,
+            "coef":        [float(c) for c in final.coef_],
+            "intercept":   float(final.intercept_),
+            "aggregate":   metrics_cv,
+            "per_fold":    per_fold,
+            "predictions": [
+                {"fold": int(fold_assignment[i]),
+                 "reference":  float(y[i]),
+                 "prediction": float(cv_preds[i])}
+                for i in range(n)
+            ],
             "deployment_formula": (
                 f"y_ref = {float(final.coef_[0]):.6f}*{args.features[0]} + "
                 f"{float(final.intercept_):+.6f}"
@@ -292,7 +385,7 @@ def main() -> None:
         }, f, indent=2)
     print(f"\n  Coefficients saved → {json_path}")
 
-    plot_path = out_dir / "linear_cv_predictions.png"
+    plot_path = out_dir / f"linear_cv_predictions{suffix}.png"
     plot_results(y, cv_preds, raw_sensor, plot_path, metrics_cv, k_folds)
     print(f"  Diagnostic plot saved → {plot_path}")
 
