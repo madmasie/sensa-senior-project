@@ -3,31 +3,32 @@ import type { SensaState, SensaReading, AqiLabel } from "./useSensa";
 
 const HISTORY_MAX = 60;
 
-function fakeReading(prev: SensaReading | null): SensaReading {
-  // Walk each value with a small random step so charts look like real sensor data
-  const walk = (v: number, step: number, min: number, max: number) =>
-    Math.min(max, Math.max(min, v + (Math.random() - 0.5) * step));
+// PM2.5 centre values (µg/m³) for each AQI phase, in order.
+// The demo cycles through all 5 levels, spending PHASE_DURATION_S seconds each.
+const PHASES: { label: AqiLabel; pm25: number }[] = [
+  { label: "GOOD",          pm25:   5 },
+  { label: "MODERATE",      pm25:  20 },
+  { label: "UNHEALTHY",     pm25:  80 },
+  { label: "VERY_UNHEALTHY",pm25: 175 },
+  { label: "HAZARDOUS",     pm25: 260 },
+];
 
-  const base = prev ?? { ts: 0, pm1: 4, pm25: 8, pm4: 10, pm10: 12, tempC: 22, rh: 45, voc: 100, nox: 10 };
+const PHASE_DURATION_S = 3; // seconds per AQI level → full cycle = 15 s
+
+function fakeReading(pm25Target: number, prev: SensaReading | null): SensaReading {
+  const jitter = (range: number) => (Math.random() - 0.5) * range;
+  const pm25 = Math.max(0, pm25Target + jitter(4));
   return {
     ts:    Date.now(),
-    pm1:   walk(base.pm1,   1,  0, 50),
-    pm25:  walk(base.pm25,  2,  0, 80),
-    pm4:   walk(base.pm4,   1,  0, 80),
-    pm10:  walk(base.pm10,  2,  0, 100),
-    tempC: walk(base.tempC, 0.2, 15, 35),
-    rh:    walk(base.rh,    1,  20, 90),
-    voc:   walk(base.voc,   10, 1, 500),
-    nox:   walk(base.nox,   3,  1, 500),
+    pm25,
+    pm1:   pm25 * 0.6  + jitter(1),
+    pm4:   pm25 * 1.2  + jitter(1),
+    pm10:  pm25 * 1.5  + jitter(2),
+    tempC: (prev?.tempC ?? 22) + jitter(0.4),
+    rh:    (prev?.rh    ?? 45) + jitter(2),
+    voc:   100 + pm25 * 0.5 + jitter(10),
+    nox:   10  + pm25 * 0.1 + jitter(3),
   };
-}
-
-function labelFor(pm25: number): AqiLabel {
-  if (pm25 <= 12)   return "GOOD";
-  if (pm25 <= 35.4) return "MODERATE";
-  if (pm25 <= 55.4) return "UNHEALTHY";
-  if (pm25 <= 150)  return "VERY_UNHEALTHY";
-  return "HAZARDOUS";
 }
 
 export function useDemo() {
@@ -38,19 +39,33 @@ export function useDemo() {
     history: [],
   });
 
-  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const intervalRef  = useRef<ReturnType<typeof setInterval> | null>(null);
+  const phaseRef     = useRef(0);   // current phase index
+  const ticksInPhase = useRef(0);   // how many 1-s ticks spent in this phase
 
   const startDemo = useCallback(() => {
-    // Seed with an initial reading immediately so charts aren't empty
-    const r0 = fakeReading(null);
-    setState({ connected: true, label: labelFor(r0.pm25), latest: r0, history: [r0] });
+    phaseRef.current     = 0;
+    ticksInPhase.current = 0;
+
+    const phase0 = PHASES[0];
+    const r0 = fakeReading(phase0.pm25, null);
+    setState({ connected: true, label: phase0.label, latest: r0, history: [r0] });
 
     intervalRef.current = setInterval(() => {
+      // Advance phase after PHASE_DURATION_S ticks
+      ticksInPhase.current++;
+      if (ticksInPhase.current >= PHASE_DURATION_S) {
+        ticksInPhase.current = 0;
+        phaseRef.current = (phaseRef.current + 1) % PHASES.length;
+      }
+
+      const { label, pm25 } = PHASES[phaseRef.current];
+
       setState(s => {
-        const r = fakeReading(s.latest);
+        const r = fakeReading(pm25, s.latest);
         return {
           ...s,
-          label: labelFor(r.pm25),
+          label,
           latest: r,
           history: [...s.history.slice(-(HISTORY_MAX - 1)), r],
         };
