@@ -167,3 +167,215 @@ Key implementation choices:
   co-location data and a re-run.
 - **Export needs `onnx2tf`** (not in the nix env) — requires the separate
   venv described in `flake.nix`'s shellHook.
+
+## 6. Local PurpleAir + SEN55 data pairing — `prepare_purpleair_data.py`
+
+The local co-location campaign produces two artifacts:
+
+- `data/sen55_YYYY-MM-DD_HH-MM-SS.pkl` — ~10-minute SEN55 capture (~360 rows
+  at ~0.6 Hz), one DataFrame per file with a `DatetimeIndex` and the eight
+  SEN55 channels.
+- `data/purpleairdata.csv` — one row per `(filename, pm2.5_1, pm2.5_2)`. The
+  filename points at the matching `.pkl`; `pm2.5_1` / `pm2.5_2` are the two
+  PurpleAir laser channels' averages over the same window.
+
+`prepare_purpleair_data.py` produces the paired CSV the training pipeline
+already understands:
+
+1. For each row in `purpleairdata.csv`, open the matching `.pkl`.
+2. **Average all 8 SEN55 channels over the file's full window** — the
+   PurpleAir reference is already a window average, so this is the correct
+   pairing point.
+3. **PurpleAir reference = mean(pm2.5_1, pm2.5_2)**, matching the EPA
+   PurpleAir correction equations.
+4. **Skip files with <30 samples** — anything tiny is a glitched capture
+   (one of ours was a 2-row / 1.6-second session — would have produced
+   nonsense averages).
+5. Output schema matches `prepare_data.py`'s BAM output:
+   `timestamp, pm1, pm2_5, pm4, pm10, temp, rh, voc, nox, bam_pm2_5`,
+   plus extra `pa_pm2_5_a`, `pa_pm2_5_b`, `source_file` columns for
+   inspection (ignored by the training code).
+
+The CSV is consumed by both `main.py` (8-feature from-scratch path) and
+`finetune.py` (3-feature transfer-learning path) without modification.
+
+## 7. Cross-validation for tiny datasets — `finetune.py --cv K`
+
+### Why predictions.png only had 2 points
+
+`plot_predictions(...)` in `src/evaluate.py` is called on the **test
+loader**, not the full dataset. With 17 paired rows and
+`val_frac=test_frac=0.15` in `config.yaml`, the split is 13/2/2.
+The 2 test points are exactly what got plotted — not a bug.
+
+### Why a test split exists at all
+
+Three roles:
+
+| Split | Role | Does the model see it? |
+|---|---|---|
+| Train | Gradient updates | Yes, every batch every epoch |
+| Validation | Early stopping, LR scheduling, "best" checkpoint selection | Indirectly via the selection criterion |
+| Test | Final, single, unbiased accuracy report | No, until the end |
+
+Validation is *not* unbiased: `if val_loss < best_val_loss: torch.save(...)`
+cherry-picks the model that did best on it. Reporting val MAE as the
+final accuracy is optimistic. Test is the closest thing to an unbiased
+generalization estimate.
+
+### The problem at N = 17
+
+A 2-sample test set can swing by µg/m³ just by changing the random seed
+— the reported test MAE is statistical theater. The fixed-split test
+landed on the two highest-PM windows in our run, producing a misleading
+12 µg/m³ MAE.
+
+### K-fold CV is the fix
+
+`python finetune.py --cv K` (added 2026-05-25). For each fold:
+
+1. **Reload the AQS pretrained weights fresh** — every fold starts from
+   the same initial state, otherwise earlier folds leak information into
+   later ones.
+2. Hold out this fold's rows as the test set.
+3. Split the remainder into train+val using `data.val_frac` proportionally.
+4. Fine-tune with the AQS scaler reused (never refit) — same invariant as
+   the single-run path.
+5. Predict on the held-out fold and store predictions indexed by the
+   original row in the dataset.
+
+After all folds, every sample has been predicted exactly once by a model
+that never saw it during training. Aggregate MAE/RMSE/R²/MBE are computed
+over the full held-out vector.
+
+- `--cv N` (or any K >= N) → leave-one-out.
+- CV mode **does not export** — there are K models, none trained on the
+  full dataset. For deployment, rerun without `--cv`.
+- Per-fold checkpoints land in `models_finetuned/cv_folds/`, plot in
+  `models_finetuned/cv_predictions.png`.
+
+### The CV result on 17 samples
+
+| Method | LOO MAE | RMSE | MBE | R² |
+|---|---|---|---|---|
+| Fixed split (`--freeze-conv`) | 12.10 | 12.29 | +12.10 | -1232 |
+| 5-fold CV (`--cv 5 --freeze-conv`) | 3.80 | 6.06 | +2.80 | -1.25 |
+| Leave-one-out (`--cv 17 --freeze-conv`) | **3.52** | 5.47 | +2.52 | -0.84 |
+
+The fixed-split 12 was an artifact of the test set landing on the worst
+two samples. The CV aggregate is the honest number.
+
+### Implementation notes
+
+- `finetune_loop` was extended with `checkpoint_path` (per-fold checkpoint
+  path so folds don't overwrite each other) and `verbose=True` (silences
+  per-epoch noise during CV). Non-breaking — both default to the old
+  behavior.
+- Pretrained state is loaded once into memory (`pretrained_state = torch.
+  load(...)`) and `model.load_state_dict(pretrained_state)` is called at
+  the top of each fold to reset.
+
+## 8. Linear-regression baseline beats the NN at N = 17 — `linear_calibration.py`
+
+### The problem with the NN at this scale
+
+The 17 paired windows form two clusters: 11 at ~2.7 µg/m³ and 6 at
+~11–14 µg/m³, with **nothing in between**. The MSE loss is dominated by
+the 11 low-PM samples, so the fine-tuned NN fits that cluster tightly
+and then *over-corrects* the high cluster (predicts 15–27 where truth
+is 11–14). A 2,273-parameter (or even 545-param with `--freeze-conv`)
+model is doing curve-fitting through essentially 2 data points.
+
+### The linear-baseline result
+
+A 2-coefficient affine fit `y_ref = a*pm2_5 + b`, leave-one-out CV on
+the same 17 samples:
+
+| Approach | LOO MAE | RMSE | MBE | R² |
+|---|---|---|---|---|
+| Raw SEN55 (no cal) | 2.62 | 2.94 | -2.62 | 0.470 |
+| Fine-tuned NN (LOO) | 3.52 | 5.47 | +2.52 | -0.837 |
+| **Linear (LOO)** | **0.70** | **0.97** | **+0.04** | **0.942** |
+
+The linear fit:
+
+- Beats the NN by **5×** on MAE,
+- Beats raw SEN55 by **4×**,
+- Meets EPA interim low-cost-sensor guidelines (MAE < 5, R² > 0.80,
+  |MBE| < 5),
+- Has 0.34% the parameter count of the NN.
+
+### Deployment formula (fit on all 17 samples)
+
+```
+pm2_5_calibrated ≈ 1.3590 × pm2_5_sen55 + 0.8337
+```
+
+Two multiplies and one add in firmware. Coefficients saved to
+`models_linear/linear_calibration.json`.
+
+### When to use which
+
+| Regime | Recommended model |
+|---|---|
+| N < ~50 paired windows, narrow PM range | **Linear baseline** — the data won't support more capacity. |
+| N ≳ 100, wider PM range, RH variation within a single PM regime | NN starts paying off (multi-feature non-linear corrections become recoverable from the data). |
+
+### Modularity guarantee
+
+`linear_calibration.py` is fully self-contained:
+
+- Does not import from `src/`.
+- Does not modify `finetune.py`, `main.py`, or any other module.
+- Writes only to `models_linear/`.
+- Deleting it has zero effect on the rest of the pipeline.
+
+`--features pm2_5 rh temp` runs the same script as a multivariate linear
+regression (one extra coefficient per feature), useful once humidity
+varies within a single PM regime.
+
+## 9. How `finetune.py` uses AQS data — clarification
+
+`finetune.py` does **not** read any AQS CSV. The AQS information enters
+only through two precomputed artifacts that `train_public.py` already
+produced:
+
+```
+models_public/best_model_public.pt   ← AQS-pretrained weights
+models_public/scaler.pkl             ← MinMaxScaler fit on AQS ranges
+```
+
+| Artifact | What AQS contributed | How `finetune.py` uses it |
+|---|---|---|
+| `best_model_public.pt` | ~14k AQS site-hours of `(pm2_5_optical, temp, rh) → pm2_5_reference` mappings, compressed into 2,273 weights | Initial model state at the start of training (and reset to this state at the top of each CV fold). Local fine-tuning nudges these weights with a 10× lower LR. |
+| `scaler.pkl` | The AQS feature min/max | Reused to normalize local SEN55 inputs into the same scaled space the pretrained weights expect. **Never refit** — `PM25CalibrationDataset(..., scaler=aqs_scaler, fit_scaler=False)`. |
+
+What `finetune.py` does NOT do:
+
+- Open `tools/data/public/paired_public.csv`.
+- See any AQS row during gradient updates.
+- Mix AQS rows into the local dataset.
+
+The AQS information is "frozen" into the initial weights and the scaler;
+every gradient update is computed purely from the local paired data.
+
+### Why this design, not joint training
+
+If AQS + local rows were concatenated, the 14k AQS rows would drown out
+the 17 local rows in the gradient. By baking AQS into pretrained weights
+first and fine-tuning on local data with a low LR, the local data has
+the *final say* (which is correct — the deployment sensor is the SEN55),
+while AQS-learned structure is preserved as a prior.
+
+### Dependency chain
+
+```
+EPA AQS website
+   └→ fetch_public_data.py → tools/data/public/paired_public.csv
+        └→ train_public.py → models_public/best_model_public.pt
+                            + models_public/scaler.pkl
+             └→ finetune.py  (the only stage that touches local data)
+```
+
+`finetune.py` is the third link — it only ever opens the artifacts the
+second link produced.

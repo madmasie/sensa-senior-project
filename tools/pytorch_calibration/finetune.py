@@ -74,10 +74,15 @@ import os
 import sys
 import time
 from pathlib import Path
+from typing import Optional
 
+import matplotlib.pyplot as plt
+import numpy as np
 import torch
 import torch.nn as nn
 import yaml
+from sklearn.metrics import r2_score
+from sklearn.model_selection import KFold
 from torch.utils.data import DataLoader
 
 from src.dataset import (
@@ -133,6 +138,8 @@ def finetune_loop(
     ft_cfg: dict,
     device: torch.device,
     freeze_conv: bool,
+    checkpoint_path: Optional[Path] = None,
+    verbose: bool = True,
 ) -> SensaCalibNet:
     """
     Fine-tuning training loop. Mirrors src/train.py's train() but with the
@@ -140,19 +147,29 @@ def finetune_loop(
     layers, and frozen-BatchNorm handling.
 
     Args:
-        model:        The pretrained SensaCalibNet (AQS weights already loaded).
-        train_loader: Local training data.
-        val_loader:   Local validation data.
-        ft_cfg:       The 'finetune' section of config.yaml.
-        device:       'cpu' or 'cuda'.
-        freeze_conv:  If True, only the regression head is updated.
+        model:           The pretrained SensaCalibNet (AQS weights already loaded).
+        train_loader:    Local training data.
+        val_loader:      Local validation data.
+        ft_cfg:          The 'finetune' section of config.yaml.
+        device:          'cpu' or 'cuda'.
+        freeze_conv:     If True, only the regression head is updated.
+        checkpoint_path: Optional override for where to save the best
+                         weights. Defaults to the path computed from
+                         ft_cfg.export. Set this when training many models
+                         in a row (e.g. cross-validation) so folds don't
+                         overwrite each other's checkpoints.
+        verbose:         If False, suppress the per-epoch print lines.
+                         The final "best val loss" message is also silenced.
 
     Returns:
         The model with the best (lowest validation loss) fine-tuned weights.
     """
-    save_dir = Path(ft_cfg["export"]["model_dir"])
-    save_dir.mkdir(parents=True, exist_ok=True)
-    checkpoint_path = save_dir / ft_cfg["export"]["pytorch_checkpoint"]
+    if checkpoint_path is None:
+        save_dir = Path(ft_cfg["export"]["model_dir"])
+        save_dir.mkdir(parents=True, exist_ok=True)
+        checkpoint_path = save_dir / ft_cfg["export"]["pytorch_checkpoint"]
+    else:
+        checkpoint_path.parent.mkdir(parents=True, exist_ok=True)
 
     lr           = ft_cfg["learning_rate"]
     weight_decay = ft_cfg.get("weight_decay", 1e-4)
@@ -175,9 +192,10 @@ def finetune_loop(
     epochs_no_improve = 0
 
     model.to(device)
-    print(f"\nFine-tuning on: {device}")
-    print(f"{'Epoch':>6}  {'Train Loss':>12}  {'Val Loss':>12}  {'LR':>10}  {'Time':>7}")
-    print("─" * 58)
+    if verbose:
+        print(f"\nFine-tuning on: {device}")
+        print(f"{'Epoch':>6}  {'Train Loss':>12}  {'Val Loss':>12}  {'LR':>10}  {'Time':>7}")
+        print("─" * 58)
 
     for epoch in range(1, max_epochs + 1):
         t0 = time.time()
@@ -209,28 +227,32 @@ def finetune_loop(
         scheduler.step(val_loss)
 
         current_lr = optimizer.param_groups[0]["lr"]
-        print(
-            f"{epoch:>6}  {train_loss:>12.6f}  {val_loss:>12.6f}  "
-            f"{current_lr:>10.2e}  {time.time() - t0:>5.1f}s"
-        )
+        if verbose:
+            print(
+                f"{epoch:>6}  {train_loss:>12.6f}  {val_loss:>12.6f}  "
+                f"{current_lr:>10.2e}  {time.time() - t0:>5.1f}s"
+            )
 
         # Keep the checkpoint with the lowest validation loss seen so far.
         if val_loss < best_val_loss:
             best_val_loss = val_loss
             epochs_no_improve = 0
             torch.save(model.state_dict(), checkpoint_path)
-            print(f"         ✓ Checkpoint saved (val_loss={val_loss:.6f})")
+            if verbose:
+                print(f"         ✓ Checkpoint saved (val_loss={val_loss:.6f})")
         else:
             epochs_no_improve += 1
 
         if epochs_no_improve >= patience:
-            print(f"\nEarly stopping at epoch {epoch} "
-                  f"(no improvement for {patience} epochs).")
+            if verbose:
+                print(f"\nEarly stopping at epoch {epoch} "
+                      f"(no improvement for {patience} epochs).")
             break
 
     # Restore the best weights before returning.
     model.load_state_dict(torch.load(checkpoint_path, map_location=device))
-    print(f"\nFine-tuning complete. Best validation loss: {best_val_loss:.6f}")
+    if verbose:
+        print(f"\nFine-tuning complete. Best validation loss: {best_val_loss:.6f}")
     return model
 
 
@@ -410,6 +432,280 @@ def run_finetune(config: dict, device: torch.device,
     print("  `pio run` (it auto-detects the 3-feature model).")
 
 
+def run_finetune_cv(
+    config: dict,
+    device: torch.device,
+    k_folds: int,
+    freeze_conv: bool,
+) -> None:
+    """
+    K-fold cross-validation for fine-tuning.
+
+    Why this exists:
+        With very few local co-location windows (this dataset is 17), a fixed
+        train/val/test split leaves only 2-3 test rows — too few to produce a
+        meaningful accuracy number. K-fold CV holds out a DIFFERENT slice of
+        the data on each of K runs so every sample acts as test exactly once.
+        The aggregate metrics are computed over the union of all held-out
+        predictions, giving a far more stable estimate of model accuracy.
+
+    What it does:
+        For each of K folds:
+            1. Reload the pretrained AQS weights (clean start, no leakage
+               from earlier folds).
+            2. Hold out this fold's rows as the test set.
+            3. Split the remaining rows into train + val using data.val_frac.
+            4. Fine-tune (with the AQS scaler reused, not refit).
+            5. Predict on the held-out test rows and store predictions.
+        After all folds, predictions for every sample exist, computed by a
+        model that never saw that sample during training. Aggregate MAE/RMSE/
+        R²/MBE are computed over the full set.
+
+    What it does NOT do:
+        Export. CV produces K models, none of which was trained on the full
+        dataset. For deployment, rerun without --cv once the CV numbers look
+        acceptable.
+
+    Args:
+        config:      Loaded tools/config.yaml.
+        device:      Compute device.
+        k_folds:     Number of folds. Pass k_folds >= N to do leave-one-out.
+        freeze_conv: If True, freeze the AQS conv block (regression head only).
+    """
+    ft_cfg    = config["finetune"]
+    pub_cfg   = config["public_data"]
+    data_cfg  = config["data"]
+    train_cfg = config["training"]
+
+    features  = pub_cfg["features"]
+    target    = pub_cfg["target"]
+    model_cfg = pub_cfg["model"]
+
+    # ── Pretrained weights + scaler (loaded once, reused every fold) ────────
+    print("\n── Loading pretrained AQS model ─────────────────────────────────")
+    pretrained_dir = Path(ft_cfg["pretrained_dir"])
+    checkpoint     = pretrained_dir / ft_cfg["pretrained_checkpoint"]
+    scaler_path    = pretrained_dir / ft_cfg["pretrained_scaler"]
+
+    if not checkpoint.exists():
+        print(f"\nERROR: pretrained checkpoint not found: {checkpoint}")
+        print("Run `python train_public.py` first to produce the AQS model.")
+        sys.exit(1)
+    if not scaler_path.exists():
+        print(f"\nERROR: pretrained scaler not found: {scaler_path}")
+        print("Run `python train_public.py` first — it saves the scaler.")
+        sys.exit(1)
+
+    aqs_scaler = load_scaler(str(scaler_path))
+    # Snapshot the pretrained weights in memory so each fold can reset to them
+    # without re-reading the checkpoint file.
+    pretrained_state = torch.load(checkpoint, map_location="cpu")
+    print(f"  Loaded {checkpoint}")
+
+    # ── Local paired data, mapped to the AQS 3-feature schema ───────────────
+    print("\n── Loading local SEN55 + reference data ─────────────────────────")
+    local_csv = Path(ft_cfg["local_paired_file"])
+    if not local_csv.exists():
+        print(f"\nERROR: local paired dataset not found: {local_csv}")
+        print("Run `python prepare_purpleair_data.py` (or prepare_data.py) first.")
+        sys.exit(1)
+
+    df = load_paired_csv(
+        str(local_csv),
+        feature_cols=["pm2_5", "temp", "rh"],
+        target_col="bam_pm2_5",
+    )
+    df = df.rename(columns={"pm2_5": "pm2_5_optical", "bam_pm2_5": "pm2_5_reference"})
+    n = len(df)
+    if n < 3:
+        print("\nERROR: need at least 3 paired rows for any CV.")
+        sys.exit(1)
+
+    # Allow leave-one-out by passing --cv N (or any value >= N).
+    if k_folds > n:
+        print(f"\n  Requested {k_folds} folds but dataset has only {n} rows — "
+              f"using leave-one-out (k = {n}).")
+        k_folds = n
+    if k_folds < 2:
+        print("\nERROR: --cv must be at least 2.")
+        sys.exit(1)
+
+    # Shuffle once using the configured seed so the CV result is reproducible.
+    df_shuffled = df.sample(frac=1.0, random_state=data_cfg["seed"]).reset_index(drop=True)
+    kf = KFold(n_splits=k_folds, shuffle=False)  # already shuffled above
+    val_frac_inner = data_cfg["val_frac"]
+    print(f"\n  N samples: {n}   K folds: {k_folds}   "
+          f"(approx test size per fold: {n // k_folds})")
+
+    fold_dir = Path(ft_cfg["export"]["model_dir"]) / "cv_folds"
+    fold_dir.mkdir(parents=True, exist_ok=True)
+
+    # We accumulate one prediction per row across all folds — at the end this
+    # array contains a held-out prediction for every sample in the dataset.
+    all_preds   = np.full(n, np.nan, dtype=np.float64)
+    all_targets = np.full(n, np.nan, dtype=np.float64)
+    per_fold_metrics: list[dict] = []
+
+    for fold_idx, (train_val_idx, test_idx) in enumerate(kf.split(df_shuffled), start=1):
+        # Re-shuffle the train+val portion of THIS fold using a per-fold seed
+        # so val is drawn from across the kept rows, not just the last 15%.
+        tv_shuffled = np.random.default_rng(data_cfg["seed"] + fold_idx).permutation(train_val_idx)
+        n_val = max(1, int(len(tv_shuffled) * val_frac_inner))
+        val_idx   = tv_shuffled[:n_val]
+        train_idx = tv_shuffled[n_val:]
+
+        train_df = df_shuffled.iloc[train_idx]
+        val_df   = df_shuffled.iloc[val_idx]
+        test_df  = df_shuffled.iloc[test_idx]
+
+        train_ds = PM25CalibrationDataset(
+            train_df, scaler=aqs_scaler, fit_scaler=False,
+            input_features=features, target_column=target,
+        )
+        val_ds = PM25CalibrationDataset(
+            val_df, scaler=aqs_scaler, fit_scaler=False,
+            input_features=features, target_column=target,
+        )
+        test_ds = PM25CalibrationDataset(
+            test_df, scaler=aqs_scaler, fit_scaler=False,
+            input_features=features, target_column=target,
+        )
+
+        batch = min(train_cfg["batch_size"], len(train_ds))
+        drop_last = (len(train_ds) % batch == 1)
+        train_loader = DataLoader(train_ds, batch_size=batch,
+                                  shuffle=True, drop_last=drop_last)
+        val_loader   = DataLoader(val_ds,   batch_size=max(1, batch), shuffle=False)
+        test_loader  = DataLoader(test_ds,  batch_size=max(1, batch), shuffle=False)
+
+        # Reset the model to the pretrained AQS weights — every fold must
+        # start from the same initial state, otherwise earlier folds leak
+        # information into later ones.
+        model = SensaCalibNet(
+            n_features=model_cfg["n_features"],
+            n_channels=model_cfg["n_channels"],
+        )
+        model.load_state_dict(pretrained_state)
+        if freeze_conv:
+            freeze_conv_block(model)
+
+        fold_ckpt = fold_dir / f"fold_{fold_idx:02d}.pt"
+        model = finetune_loop(
+            model, train_loader, val_loader, ft_cfg, device, freeze_conv,
+            checkpoint_path=fold_ckpt, verbose=False,
+        )
+
+        # Predict on the held-out fold and store predictions by original
+        # row index, so the final aggregate aligns with the source dataset.
+        model.eval()
+        with torch.no_grad():
+            for i, (X_batch, y_batch) in enumerate(test_loader):
+                preds = model(X_batch.to(device)).cpu().numpy().flatten()
+                targets = y_batch.numpy().flatten()
+                # Walk along test_idx in batch order — DataLoader with
+                # shuffle=False preserves order.
+                lo = i * batch
+                hi = lo + len(preds)
+                rows = test_idx[lo:hi]
+                all_preds[rows]   = preds
+                all_targets[rows] = targets
+
+        fold_err  = all_preds[test_idx] - all_targets[test_idx]
+        fold_mae  = float(np.mean(np.abs(fold_err)))
+        fold_rmse = float(np.sqrt(np.mean(fold_err ** 2)))
+        fold_mbe  = float(np.mean(fold_err))
+        per_fold_metrics.append({
+            "fold": fold_idx, "n_test": len(test_idx),
+            "mae": fold_mae, "rmse": fold_rmse, "mbe": fold_mbe,
+        })
+        print(f"  Fold {fold_idx:>2}/{k_folds}  "
+              f"n_test={len(test_idx):>2}  "
+              f"MAE={fold_mae:6.3f}  RMSE={fold_rmse:6.3f}  MBE={fold_mbe:+6.3f}")
+
+    # ── Aggregate across all folds ──────────────────────────────────────────
+    if np.isnan(all_preds).any():
+        # Should never happen — every sample belongs to exactly one fold.
+        missing = int(np.isnan(all_preds).sum())
+        print(f"\n  WARNING: {missing} sample(s) missing a prediction — "
+              "check fold indexing.")
+        mask = ~np.isnan(all_preds)
+        all_preds   = all_preds[mask]
+        all_targets = all_targets[mask]
+
+    errors = all_preds - all_targets
+    agg_mae  = float(np.mean(np.abs(errors)))
+    agg_rmse = float(np.sqrt(np.mean(errors ** 2)))
+    agg_mbe  = float(np.mean(errors))
+    agg_r2   = float(r2_score(all_targets, all_preds)) if len(all_targets) > 1 else float("nan")
+
+    fold_maes = np.array([m["mae"] for m in per_fold_metrics])
+    print("\n─────────────────────────────────────────────")
+    print(f"  Cross-validation result — {k_folds} folds, "
+          f"{len(all_preds)} held-out predictions")
+    print("─────────────────────────────────────────────")
+    print(f"  Aggregate MAE  : {agg_mae:8.3f}  µg/m³")
+    print(f"  Aggregate RMSE : {agg_rmse:8.3f}  µg/m³")
+    print(f"  Aggregate MBE  : {agg_mbe:+8.3f}  µg/m³")
+    print(f"  Aggregate R²   : {agg_r2:8.4f}")
+    print(f"  Per-fold MAE   : mean={fold_maes.mean():.3f}  "
+          f"std={fold_maes.std(ddof=0):.3f}  "
+          f"min={fold_maes.min():.3f}  max={fold_maes.max():.3f}")
+
+    if agg_mae < 5.0 and agg_r2 > 0.80 and abs(agg_mbe) < 5.0:
+        print("\n  ✓ Meets EPA interim low-cost sensor accuracy guidelines.")
+    elif agg_mae < 10.0 and agg_r2 > 0.60:
+        print("\n  ~ Acceptable but below EPA recommended thresholds.")
+    else:
+        print("\n  ✗ Below EPA guidelines. Likely causes: too few samples,")
+        print("    narrow PM2.5 range, or model mismatch.")
+
+    # ── Plot every held-out prediction ──────────────────────────────────────
+    plot_path = Path(ft_cfg["export"]["model_dir"]) / "cv_predictions.png"
+    plot_path.parent.mkdir(parents=True, exist_ok=True)
+    fig, axes = plt.subplots(1, 2, figsize=(12, 5))
+    fig.suptitle(f"Fine-tuning cross-validation — {k_folds} folds, "
+                 f"{len(all_preds)} held-out predictions", fontsize=13)
+
+    ax = axes[0]
+    ax.scatter(all_targets, all_preds, s=40, color="steelblue", alpha=0.85,
+               edgecolor="white")
+    lim = [min(all_targets.min(), all_preds.min()) - 1.0,
+           max(all_targets.max(), all_preds.max()) + 1.0]
+    ax.plot(lim, lim, "r--", linewidth=1.5, label="y = x")
+    ax.set_xlim(lim); ax.set_ylim(lim)
+    ax.set_xlabel("Reference PM2.5 (µg/m³)")
+    ax.set_ylabel("Fine-tuned prediction (µg/m³)")
+    ax.set_title("Held-out predictions vs reference")
+    ax.legend(loc="upper left")
+    ax.grid(True, alpha=0.3)
+    ax.text(0.98, 0.05,
+            f"MAE = {agg_mae:.2f}\nRMSE = {agg_rmse:.2f}\n"
+            f"MBE = {agg_mbe:+.2f}\nR² = {agg_r2:.3f}",
+            transform=ax.transAxes, ha="right", va="bottom",
+            fontsize=10, family="monospace",
+            bbox=dict(boxstyle="round", facecolor="white", alpha=0.85))
+
+    ax = axes[1]
+    ax.hist(errors, bins=max(5, len(errors) // 2),
+            color="steelblue", edgecolor="white", alpha=0.85)
+    ax.axvline(0, color="red", linestyle="--", linewidth=1.5, label="zero error")
+    ax.axvline(agg_mbe, color="orange", linestyle="-", linewidth=1.5,
+               label=f"mean bias = {agg_mbe:+.2f}")
+    ax.set_xlabel("Prediction − reference (µg/m³)")
+    ax.set_ylabel("Count")
+    ax.set_title("Residual distribution")
+    ax.legend()
+    ax.grid(True, alpha=0.3)
+
+    plt.tight_layout()
+    plt.savefig(plot_path, dpi=150, bbox_inches="tight")
+    plt.close()
+    print(f"\n  Saved CV diagnostic plot → {plot_path}")
+    print(f"  Per-fold checkpoints in  → {fold_dir}")
+    print("\n  CV mode does not export a deployable model — rerun without")
+    print("  --cv once the CV numbers look acceptable.")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="Fine-tune the AQS-pretrained calibration model on local "
@@ -425,6 +721,14 @@ def main() -> None:
         help="Freeze the conv feature extractor; fine-tune only the "
              "regression head. Use when local data is very scarce. "
              "Overrides finetune.freeze_conv in config.yaml.",
+    )
+    parser.add_argument(
+        "--cv", type=int, metavar="K",
+        help="Run K-fold cross-validation instead of the fixed train/val/test "
+             "split. Every sample is held out as test exactly once; the "
+             "aggregate MAE/RMSE/R²/MBE are computed over all held-out "
+             "predictions. Pass --cv N (or any K >= N) for leave-one-out. "
+             "CV mode does NOT export a deployable model.",
     )
     script_dir = Path(__file__).resolve().parent
     parser.add_argument(
@@ -449,7 +753,10 @@ def main() -> None:
     freeze_conv = args.freeze_conv or config["finetune"].get("freeze_conv", False)
 
     device = get_device()
-    run_finetune(config, device, export=not args.no_export, freeze_conv=freeze_conv)
+    if args.cv is not None:
+        run_finetune_cv(config, device, k_folds=args.cv, freeze_conv=freeze_conv)
+    else:
+        run_finetune(config, device, export=not args.no_export, freeze_conv=freeze_conv)
 
 
 if __name__ == "__main__":
