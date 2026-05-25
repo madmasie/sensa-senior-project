@@ -28,6 +28,7 @@ env/
 # The models/ directories are populated by main.py / train_public.py during
 # training (checkpoints, scaler, predictions.png).
 # None of these are source code — they are build outputs or raw data.
+/data/
 tools/data/
 tools/pytorch_calibration/data/
 tools/pytorch_calibration/models/
@@ -46,3 +47,16 @@ tools/sensa_tools.egg-info
 *.pdf
 # Exception: webapp assets that are genuine source files.
 !webapp/src/assets/hero.png
+
+# ── LaTeX build artefacts ────────────────────────────────────────────────────
+# Auxiliary files produced by pdflatex/beamer when compiling poster/poster.tex.
+# Regenerate with: pdflatex poster.tex
+*.aux
+*.fdb_latexmk
+*.fls
+*.log
+*.nav
+*.out
+*.snm
+*.synctex.gz
+*.toc

@@ -2,13 +2,20 @@
 uart_logger.py — Reads SEN55 data from serial UART, stores it in a
 timestamped pandas DataFrame, and saves it as a .pkl file.
 
-Recording is controlled by sentinel strings sent over UART:
-  START_RECORDING  — firmware signals that a session has begun
-  STOP_RECORDING   — firmware signals that the session has ended
+Recording can be controlled two ways:
+
+  1. Keyboard commands typed into this program's terminal:
+         start  (or  s)   — begin a recording session
+         stop   (or  x)   — end the session and write the .pkl file
+         quit   (or  q)   — flush any session and exit
+         <Enter>          — toggle recording on/off
+  2. Sentinel strings sent over UART by the firmware:
+         START_RECORDING  — firmware signals that a session has begun
+         STOP_RECORDING   — firmware signals that the session has ended
 
 Each START/STOP pair produces one .pkl file. Multiple pairs in the same
 run each produce their own file (the output filename is timestamped at
-the moment START_RECORDING is received).
+the moment the session is saved).
 
 Dependencies: pyserial, pandas  (pip install pyserial pandas)
 
@@ -21,8 +28,11 @@ Expected serial line format (from firmware):
 """
 
 import argparse
+import queue
 import re
 import signal
+import sys
+import threading
 from datetime import datetime
 from pathlib import Path
 
@@ -74,20 +84,33 @@ def save_session(rows: list[dict], out_dir: Path) -> None:
     print(f"  Saved {len(df)} rows → {out_path}")
 
 
+def _command_reader(cmd_queue: "queue.Queue[str]") -> None:
+    """
+    Background (daemon) thread: read whole lines from stdin and push each one,
+    lower-cased and stripped, onto *cmd_queue* for the main loop to consume.
+
+    Blocking on stdin here keeps the serial read loop responsive. The thread
+    ends naturally on EOF (e.g. stdin closed or piped input exhausted).
+    """
+    for line in sys.stdin:
+        cmd_queue.put(line.strip().lower())
+
+
 def collect(port: str, baud: int, out_dir: Path) -> None:
     """
-    Keep the serial port open indefinitely, waiting for START_RECORDING /
-    STOP_RECORDING sentinels from the firmware.
+    Keep the serial port open indefinitely, recording SEN55 data into .pkl
+    files. Recording starts/stops on either keyboard commands or the firmware
+    sentinels START_RECORDING / STOP_RECORDING.
 
     State machine:
-        WAITING  →  (START_RECORDING)  →  RECORDING
-        RECORDING →  (STOP_RECORDING)  →  WAITING   (file written here)
+        WAITING  →  (start)  →  RECORDING
+        RECORDING →  (stop)  →  WAITING   (file written here)
 
-    Ctrl-C flushes any in-progress session before exiting.
+    Ctrl-C (or the `quit` command) flushes any in-progress session before exit.
     """
-    recording = False   # True while between START_RECORDING and STOP_RECORDING
+    recording = False   # True while a session is active
     rows: list[dict] = []
-    stop = False        # Set to True by Ctrl-C
+    stop = False        # Set to True by Ctrl-C or the `quit` command
 
     def _on_sigint(sig, frame):
         nonlocal stop
@@ -95,41 +118,75 @@ def collect(port: str, baud: int, out_dir: Path) -> None:
 
     signal.signal(signal.SIGINT, _on_sigint)
 
-    print(f"Listening on {port} at {baud} baud.  Waiting for START_RECORDING…")
-    print("(Ctrl-C to exit)\n")
+    def begin(origin: str) -> None:
+        """Start a new recording session; save any in-progress one first."""
+        nonlocal recording, rows
+        if recording:
+            print("  [warn] Recording already active — saving current session first.")
+            save_session(rows, out_dir)
+        recording = True
+        rows = []
+        print(f"  [START] Recording began at {datetime.now():%H:%M:%S}  (via {origin})")
+
+    def end(origin: str) -> None:
+        """Stop the current session and write it to disk."""
+        nonlocal recording, rows
+        if not recording:
+            print(f"  [warn] Stop ignored — not currently recording  (via {origin}).")
+            return
+        recording = False
+        print(f"  [STOP]  Recording ended at {datetime.now():%H:%M:%S}  (via {origin})")
+        save_session(rows, out_dir)
+        rows = []
+        print("\nIdle — type 'start' (or press Enter) to begin a new session.\n")
+
+    # Background thread feeds keyboard commands to the main loop.
+    cmd_queue: "queue.Queue[str]" = queue.Queue()
+    threading.Thread(target=_command_reader, args=(cmd_queue,), daemon=True).start()
+
+    print(f"Listening on {port} at {baud} baud.")
+    print("Commands:  start | s   stop | x   quit | q   (or press Enter to toggle)")
+    print("(Ctrl-C also exits)\n")
 
     with serial.Serial(port, baud, timeout=1) as ser:
         while not stop:
+            # ── drain any pending keyboard commands ───────────────────────────
+            try:
+                while True:
+                    cmd = cmd_queue.get_nowait()
+                    if cmd in ("start", "s"):
+                        begin("keyboard")
+                    elif cmd in ("stop", "x"):
+                        end("keyboard")
+                    elif cmd in ("quit", "q"):
+                        stop = True
+                    elif cmd == "":
+                        # Bare Enter toggles recording
+                        (end if recording else begin)("keyboard")
+                    else:
+                        print(f"  [?] Unknown command '{cmd}'. "
+                              f"Use: start | stop | quit  (Enter toggles)")
+            except queue.Empty:
+                pass
+            if stop:
+                break
+
             raw = ser.readline()
             if not raw:
-                continue  # 1-second readline timeout — keep waiting
+                continue  # 1-second readline timeout — loop to recheck commands
 
             try:
                 line = raw.decode("utf-8", errors="replace").strip()
             except Exception:
                 continue
 
-            # ── control sentinels ─────────────────────────────────────────────
+            # ── control sentinels from firmware ───────────────────────────────
             if "START_RECORDING" in line:
-                if recording:
-                    # Firmware sent START again without STOP — save what we have
-                    print("  [warn] START_RECORDING received while already recording.")
-                    print("  Saving current session and starting a new one.")
-                    save_session(rows, out_dir)
-                    rows = []
-                recording = True
-                print(f"  [START] Recording began at {datetime.now().strftime('%H:%M:%S')}")
+                begin("firmware")
                 continue
 
             if "STOP_RECORDING" in line:
-                if not recording:
-                    print("  [warn] STOP_RECORDING received but not currently recording — ignored.")
-                    continue
-                recording = False
-                print(f"  [STOP]  Recording ended at {datetime.now().strftime('%H:%M:%S')}")
-                save_session(rows, out_dir)
-                rows = []
-                print("\nWaiting for next START_RECORDING…")
+                end("firmware")
                 continue
 
             # ── data lines (only captured while recording) ────────────────────
@@ -152,9 +209,9 @@ def collect(port: str, baud: int, out_dir: Path) -> None:
                 f"RH={row['rh']:.1f}  VOC={row['voc']:.0f}  NOx={row['nox']:.0f}"
             )
 
-    # ── Ctrl-C: flush any in-progress session ─────────────────────────────────
+    # ── exit: flush any in-progress session ───────────────────────────────────
     if recording and rows:
-        print("\nInterrupted — saving partial session…")
+        print("\nExiting — saving in-progress session…")
         save_session(rows, out_dir)
     elif not rows:
         print("\nNo data captured.")
@@ -162,8 +219,9 @@ def collect(port: str, baud: int, out_dir: Path) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Log SEN55 UART data to timestamped .pkl files, "
-                    "gated by START_RECORDING / STOP_RECORDING sentinels."
+        description="Log SEN55 UART data to timestamped .pkl files, controlled "
+                    "by keyboard commands or START_RECORDING / STOP_RECORDING "
+                    "sentinels."
     )
     parser.add_argument(
         "--port", required=True,

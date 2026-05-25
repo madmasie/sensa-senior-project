@@ -1,0 +1,264 @@
+% =====================================================================
+%  Sensa — Wearable Air Quality Monitoring System with Embedded AI
+%  Cal Poly EE Senior Project Poster (48" x 36", landscape)
+%
+%  Build with:  latexmk -pdf -xelatex poster.tex
+%        or:    xelatex poster.tex   (twice for refs)
+% =====================================================================
+\documentclass[final,t]{beamer}
+
+\usepackage[size=custom,width=121.92,height=91.44,scale=1.05]{beamerposter} % 48" x 36"
+\usepackage[utf8]{inputenc}
+\usepackage{lmodern}
+\usepackage{microtype}
+\usepackage{graphicx}
+\usepackage{tikz}
+\usepackage{adjustbox}
+\usepackage{array,booktabs,tabularx}
+\usepackage{ragged2e}
+\usepackage{enumitem}
+\usepackage{xcolor}
+\usepackage{wrapfig}
+
+% ---------- Cal Poly palette -----------------------------------------
+\definecolor{cpgreen}{HTML}{154734}   % Cal Poly Green (PMS 343)
+\definecolor{cpgold}{HTML}{BD8B13}    % Cal Poly Gold
+\definecolor{cpsage}{HTML}{3F7A5E}    % lighter green for accents
+\definecolor{cpcharcoal}{HTML}{2B2B2B}
+\definecolor{cprule}{HTML}{B8B8B8}    % subtle horizontal rules
+\definecolor{cpsand}{HTML}{F5F2EA}    % off-white block background
+
+% ---------- Beamer color/styling -------------------------------------
+\setbeamercolor{background canvas}{bg=white}
+\setbeamercolor{normal text}{fg=cpcharcoal}
+\setbeamercolor{itemize item}{fg=cpgreen}
+\setbeamercolor{itemize subitem}{fg=cpsage}
+
+\setbeamertemplate{itemize item}{\raisebox{0.15ex}{\rule{0.55em}{0.55em}}}
+\setbeamertemplate{itemize subitem}{\raisebox{0.25ex}{\textbullet}}
+\setbeamertemplate{navigation symbols}{}
+
+% Section header used inside each "card" --------------------------------
+\newcommand{\sectionhead}[1]{%
+  {\color{cpgreen}\bfseries\fontsize{40}{46}\selectfont #1}\\[0.1em]
+  {\color{cpgold}\rule{\linewidth}{2pt}}\vspace{0.4em}\par
+}
+
+% A clean "card" container --------------------------------------------
+\newenvironment{card}[1]
+  {\begin{beamercolorbox}[wd=\linewidth,sep=0.8em,rounded=true,shadow=false]{}%
+   \begin{minipage}{\linewidth}\sectionhead{#1}\justifying}
+  {\end{minipage}\end{beamercolorbox}\vspace{0.6em}}
+
+% Image placeholder ----------------------------------------------------
+% \placeholder{aspect ratio width:height}{caption}
+\newcommand{\placeholder}[3][\linewidth]{%
+  \begin{tikzpicture}
+    \node[draw=cprule,line width=1pt,fill=cpsand,minimum width=#1,
+          minimum height=#2,align=center,inner sep=0pt,rounded corners=6pt]
+      {\color{cpsage}\bfseries\fontsize{22}{26}\selectfont [\,#3\,]};
+  \end{tikzpicture}\par
+}
+
+\newcommand{\figcap}[1]{\par\vspace{0.2em}{\color{cpcharcoal}\small\itshape Figure: #1}\par}
+
+% =====================================================================
+%  Title bar (custom — replaces beamer's default headline)
+% =====================================================================
+\newlength{\headerheight}\setlength{\headerheight}{11.5cm}
+\newlength{\accentheight}\setlength{\accentheight}{0.5cm}
+
+\setbeamertemplate{headline}{%
+  \leavevmode
+  \begin{tikzpicture}
+    % Main green bar
+    \fill[cpgreen] (0,0) rectangle (\paperwidth,\headerheight);
+    % Thin gold accent strip directly below
+    \fill[cpgold] (0,-\accentheight) rectangle (\paperwidth,0);
+    % Title block (left)
+    \node[anchor=west,inner sep=0pt,text=white] at (1.8cm,\headerheight/2){%
+      \begin{minipage}{0.74\paperwidth}
+        {\fontsize{82}{92}\selectfont\bfseries Wearable Air Quality Monitoring}\\[0.15em]
+        {\fontsize{82}{92}\selectfont\bfseries System with Embedded AI}\\[0.5em]
+        {\fontsize{34}{40}\selectfont Ryan Niemi \;\textbar\; Maddie Masiello \;\textbar\; Gulianna Corteguera}\\[0.15em]
+        {\color{cpgold}\fontsize{30}{34}\selectfont\itshape Advisor: TBD \quad\textbullet\quad Cal Poly, Electrical Engineering}
+      \end{minipage}};
+    % Right-side institution block
+    \node[anchor=east,inner sep=0pt,text=white] at (\paperwidth-1.8cm,\headerheight/2){%
+      \begin{minipage}{0.20\paperwidth}\raggedleft
+        {\fontsize{60}{64}\selectfont\bfseries CAL\,POLY}\\[0.2em]
+        {\color{cpgold}\fontsize{34}{38}\selectfont Electrical Engineering}
+      \end{minipage}};
+  \end{tikzpicture}\par\vspace{\accentheight}
+}
+\setbeamertemplate{footline}{%
+  \leavevmode
+  \begin{beamercolorbox}[wd=\paperwidth,ht=1.4cm,dp=0.4cm,leftskip=2cm,rightskip=2cm]{}
+    \color{cpcharcoal}\small
+    \textbf{Sensa} \textbullet\; Cal Poly EE Senior Project 2025--2026
+    \hfill
+    Contact: \texttt{niemiryan@gmail.com} \;\textbullet\; github.com/sensa-project
+  \end{beamercolorbox}
+}
+
+% =====================================================================
+\begin{document}
+\begin{frame}[t]\vspace{0.5em}
+
+\begin{columns}[t,totalwidth=\linewidth]
+
+% =====================================================================
+% LEFT COLUMN
+% =====================================================================
+\begin{column}{.315\linewidth}
+
+\begin{card}{Motivation}
+Most individuals live in areas where \textbf{accurate, real-time air-quality
+information is unavailable}. Existing wearable monitors are limited by:
+\begin{itemize}\setlength\itemsep{0.25em}
+  \item \textbf{Calibration drift} and cross-sensitivity in low-cost PM and VOC sensors
+  \item Dependence on \textbf{cloud recalibration}, raising latency and privacy concerns
+  \item Bulky form factors and \$300+ price points
+\end{itemize}
+\vspace{0.3em}
+\textbf{Sensa} closes this gap with a compact, battery-powered, AI-driven
+device that \emph{automatically self-calibrates} on-device, delivering
+laboratory-grade awareness for everyday users.
+\end{card}
+
+\begin{card}{Project Objectives}
+\begin{itemize}\setlength\itemsep{0.3em}
+  \item Measure PM\textsubscript{1}, PM\textsubscript{2.5}, PM\textsubscript{4},
+        PM\textsubscript{10}, VOC index, NO\textsubscript{x} index, temperature,
+        and humidity in real time
+  \item Run \textbf{embedded CNN calibration \& classification} entirely
+        on-device --- no cloud dependency
+  \item Achieve \textbf{$\geq 12$~hour} battery life in a wearable
+        (${<}\,3$~in\textsuperscript{2}) form factor
+  \item Stay under a \textbf{\$100} bill-of-materials target
+  \item Validate against laboratory-grade reference equipment
+\end{itemize}
+\end{card}
+
+\begin{card}{Hardware --- Custom Sensa PCB}
+\centering
+\placeholder{18cm}{PCB rendering / photo \\(top + bottom view)}
+\figcap{Custom 2-layer PCB integrating ESP32-S3 module, SEN55 sensor,
+LiPo charger, and haptic / piezo alert hardware.}
+\justifying\vspace{0.4em}
+\begin{itemize}\setlength\itemsep{0.2em}
+  \item \textbf{MCU:} ESP32-S3-WROOM-1 (dual-core, 8\,MB PSRAM)
+  \item \textbf{Sensor:} Sensirion SEN55 over I\textsuperscript{2}C
+  \item \textbf{Power:} single-cell LiPo, MCP73831 charger, 5\,V boost
+  \item \textbf{Alerts:} vibration motor + piezo with severity-coded pulses
+  \item \textbf{I/O:} native USB-C, status LED, charge LED
+\end{itemize}
+\end{card}
+
+\end{column}
+
+% =====================================================================
+% MIDDLE COLUMN
+% =====================================================================
+\begin{column}{.315\linewidth}
+
+\begin{card}{System Architecture}
+\centering
+\placeholder{22cm}{Block diagram: SEN55 $\rightarrow$ ESP32-S3 (TFLite Micro) \\$\rightarrow$ BLE / Wi-Fi $\rightarrow$ Web Dashboard}
+\figcap{End-to-end data path. All calibration and classification run on
+the ESP32-S3; the cloud is used only for visualization and long-term storage.}
+\end{card}
+
+\begin{card}{Embedded CNN Calibration}
+A lightweight \textbf{1D convolutional network} runs continuously on the
+ESP32-S3 to correct sensor drift and cross-sensitivity --- the core
+research contribution of this project.
+\vspace{0.3em}
+\begin{itemize}\setlength\itemsep{0.25em}
+  \item \textbf{Base model} trained on AQS reference-grade station data
+  \item \textbf{Transfer learning} fine-tunes the head on local Sensa
+        co-location data
+  \item \textbf{Post-training int8 quantization} via TFLite Micro --- the model
+        fits in ${<}\,100$\,KB of flash and runs in ${<}\,15$\,ms / inference
+  \item Inference loop: \emph{SEN55 read $\rightarrow$ pre-process $\rightarrow$
+        ring buffer $\rightarrow$ TFLite Micro $\rightarrow$ class + corrected PM}
+\end{itemize}
+\vspace{0.3em}
+\centering
+\placeholder{14cm}{CNN architecture diagram \\(1D conv $\rightarrow$ depthwise $\rightarrow$ dense $\rightarrow$ softmax)}
+\figcap{Quantized 1D-CNN deployed on-device. Trained in TensorFlow,
+deployed via TFLite Micro.}
+\end{card}
+
+\begin{card}{Severity-Coded Alerts}
+When the on-device classifier flags poor air quality, the haptic motor and
+piezo buzzer fire in a pattern that maps directly to AQI severity:
+\vspace{0.3em}
+\centering
+\setlength{\tabcolsep}{1.0em}\renewcommand{\arraystretch}{1.25}
+{\small
+\begin{tabular}{lc}
+\toprule
+\textbf{Classification} & \textbf{Pulses} \\
+\midrule
+UNHEALTHY & 1 \\
+VERY UNHEALTHY & 2 \\
+HAZARDOUS & 3 \\
+\bottomrule
+\end{tabular}}
+\justifying\vspace{0.4em}
+A 30-second cooldown prevents alert fatigue when air quality remains poor.
+\end{card}
+
+\end{column}
+
+% =====================================================================
+% RIGHT COLUMN
+% =====================================================================
+\begin{column}{.315\linewidth}
+
+\begin{card}{AI Analysis \& Insights}
+\centering
+\placeholder{20cm}{Time-series plot of raw vs. CNN-calibrated PM\textsubscript{2.5}}
+\figcap{CNN calibration tracks the AQS reference channel through humidity
+and temperature excursions where raw SEN55 output drifts.}
+\vspace{0.5em}
+\placeholder{20cm}{Scatter / Bland-Altman: \\predicted vs. reference PM\textsubscript{2.5}}
+\figcap{Reduced bias and tighter limits of agreement after on-device
+calibration ($R^{2}$, RMSE shown in final report).}
+\end{card}
+
+\begin{card}{Web Dashboard}
+\centering
+\placeholder{20cm}{Screenshot of live web dashboard \\(real-time AQI, history, location)}
+\figcap{React / FastAPI dashboard renders the device's already-classified
+output --- the AI runs on the wearable, not the server.}
+\justifying\vspace{0.3em}
+\begin{itemize}\setlength\itemsep{0.2em}
+  \item Live readings stream over BLE $\rightarrow$ companion app $\rightarrow$ cloud
+  \item Historical trends, exposure summaries, exportable CSV
+  \item No raw PII --- only sensor data is uploaded
+\end{itemize}
+\end{card}
+
+\begin{card}{Results \& Future Work}
+\begin{itemize}\setlength\itemsep{0.3em}
+  \item Embedded CNN calibration reduces PM\textsubscript{2.5} RMSE vs. raw SEN55
+        output during co-location with reference equipment
+  \item Full firmware fits in ${<}\,1$\,MB; CNN inference under 15\,ms
+  \item Battery life meets the 12-hour target on a single LiPo cell
+\end{itemize}
+\vspace{0.3em}
+\textbf{Next steps:}
+\begin{itemize}\setlength\itemsep{0.2em}
+  \item Extend transfer-learning pipeline to per-user adaptation
+  \item Add NO\textsubscript{x} / VOC-specific calibration heads
+  \item Long-duration field deployment (${>}\,30$ days)
+\end{itemize}
+\end{card}
+
+\end{column}
+
+\end{columns}
+\end{frame}
+\end{document}
