@@ -4,7 +4,14 @@
 #include "processing/pipeline.h"
 #include "sensor/sen55_sensor.h"
 
+// In DEMO_MODE we swap the real SEN55 for a fake sensor that cycles through
+// all AQI levels. Everything else (pipeline, BLE, alerts) is unchanged.
+#ifdef DEMO_MODE
+#include "sensor/demo_sensor.h"
+static DemoSensor sensor;
+#else
 static Sen55Sensor sensor;
+#endif
 
 // 1 Hz pipeline timer — fires once per second without blocking the CPU.
 static uint32_t last_tick_ms = 0;

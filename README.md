@@ -87,6 +87,14 @@ pio device monitor                     # open serial output
 
 The `-e sensa-pcb` flag selects the PCB build environment, which enables the STATUS_LED, vibration motor, and buzzer. Without it, you get the dev board build.
 
+**Demo mode (PCB with fake sensor data):**
+```bash
+pio run -e sensa-pcb-demo --target upload   # compile and flash demo firmware
+pio device monitor                          # open serial output
+```
+
+Demo mode replaces the real SEN55 sensor with synthetic data that cycles through every AQI level (Good → Moderate → Unhealthy → Very Unhealthy → Hazardous → repeat). It spends about 15 seconds in each level before moving to the next, with small random variations so the charts look realistic. All BLE output, alerts, and dashboard behavior work exactly the same as with a real sensor — useful for poster demos where you don't want to depend on actual air quality conditions.
+
 ### First-time flashing the custom PCB
 
 The first time you flash a brand-new PCB, the ESP32 may not automatically enter programming mode. If the upload hangs or times out, follow these steps:
