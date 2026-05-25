@@ -1,6 +1,6 @@
 import { useSensa } from "./ble/useSensa";
 import { useDemo } from "./ble/useDemo";
-import { AqiBadge } from "./components/AqiBadge";
+import { AqiBadge, AqiBanner } from "./components/AqiBadge";
 import { MetricCard } from "./components/MetricCard";
 import { PMChart } from "./components/PMChart";
 import "./App.css";
@@ -43,6 +43,8 @@ export default function App() {
         )}
         {connected && <span className="status-dot" title="Connected" />}
       </header>
+
+      <AqiBanner label={label} />
 
       <section className="grid">
         <MetricCard label="PM2.5" value={fmt(latest?.pm25)} unit="µg/m³">
