@@ -53,8 +53,9 @@ When air quality exceeds a threshold, the vibration motor and piezo buzzer fire 
 
 | Classification | Pulses |
 |---|---|
-| UNHEALTHY | 1 |
-| VERY_UNHEALTHY | 2 |
+| MODERATE | 1 |
+| UNHEALTHY | 2 |
+| VERY_UNHEALTHY | 3 |
 | HAZARDOUS | 3 |
 
 A 30-second cooldown prevents repeated alerts while air quality stays bad.

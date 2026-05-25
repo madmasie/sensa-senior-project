@@ -22,14 +22,14 @@ static const uint32_t INTERVAL_MS = 1000;
 #define BUZZER_CHANNEL   0
 #define BUZZER_FREQ_HZ   3000
 #define BUZZER_RESOLUTION 8   // 8-bit duty cycle (0–255)
-#define BUZZER_DUTY      128  // 50% duty cycle = clean square wave
+#define BUZZER_DUTY      255  // 100% duty cycle = maximum volume for demo
 
 // How long each motor+buzzer pulse lasts (ms).
-#define ALERT_PULSE_MS  150
+#define ALERT_PULSE_MS  400
 // Gap between pulses in a multi-burst alert (ms).
-#define ALERT_GAP_MS    150
-// Minimum time between alerts (ms). Prevents continuous firing while air is bad.
-#define ALERT_COOLDOWN_MS 30000
+#define ALERT_GAP_MS    100
+// Minimum time between alerts (ms). Reduced for demo so it fires frequently.
+#define ALERT_COOLDOWN_MS 5000
 
 // Tracks when the last alert fired so we can enforce the cooldown.
 static uint32_t last_alert_ms = 0;
@@ -168,20 +168,24 @@ void loop() {
     Serial.print("Classification: ");
     switch (result) {
         case Classification::GOOD:          Serial.println("GOOD");          break;
-        case Classification::MODERATE:      Serial.println("MODERATE");      break;
-        case Classification::UNHEALTHY:     Serial.println("UNHEALTHY");
+        case Classification::MODERATE:      Serial.println("MODERATE");
 #ifdef SENSA_PCB
             maybe_trigger_alert(1);  // 1 short burst
 #endif
             break;
-        case Classification::VERY_UNHEALTHY: Serial.println("VERY_UNHEALTHY");
+        case Classification::UNHEALTHY:     Serial.println("UNHEALTHY");
 #ifdef SENSA_PCB
             maybe_trigger_alert(2);  // 2 short bursts
 #endif
             break;
-        case Classification::HAZARDOUS:     Serial.println("HAZARDOUS");
+        case Classification::VERY_UNHEALTHY: Serial.println("VERY_UNHEALTHY");
 #ifdef SENSA_PCB
             maybe_trigger_alert(3);  // 3 short bursts
+#endif
+            break;
+        case Classification::HAZARDOUS:     Serial.println("HAZARDOUS");
+#ifdef SENSA_PCB
+            maybe_trigger_alert(3);  // 3 short bursts (same as VERY_UNHEALTHY max)
 #endif
             break;
         default:                            Serial.println("UNKNOWN");       break;
