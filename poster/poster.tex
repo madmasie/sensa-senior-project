@@ -131,7 +131,7 @@ laboratory-grade awareness for everyday users.
         and humidity in real time
   \item Run \textbf{embedded CNN calibration \& classification} entirely
         on-device --- no cloud dependency
-  \item Achieve \textbf{$\geq 12$~hour} battery life in a wearable
+  \item Achieve \textbf{$\geq 12$ \approx hour} battery life in a wearable
         (${<}\,3$~in\textsuperscript{2}) form factor
   \item Stay under a \textbf{\$100} bill-of-materials target
   \item Validate against laboratory-grade reference equipment
@@ -209,13 +209,12 @@ A 30-second cooldown prevents alert fatigue when air quality remains poor.
 
 \begin{card}{AI Analysis \& Insights}
 \centering
-\placeholder{20cm}{Time-series plot of raw vs. CNN-calibrated PM\textsubscript{2.5}}
-\figcap{CNN calibration tracks the AQS reference channel through humidity
-and temperature excursions where raw SEN55 output drifts.}
+\includegraphics[width=\linewidth]{img/fig_cnn_architecture.png}
+\figcap{CNN calibration uses transfer learning and physics informed AI to 
+incorporate humidity and temperature into PM predictions.}
 \vspace{0.5em}
-\placeholder{20cm}{Scatter / Bland-Altman: \\predicted vs. reference PM\textsubscript{2.5}}
-\figcap{Reduced bias and tighter limits of agreement after on-device
-calibration ($R^{2}$, RMSE shown in final report).}
+\includegraphics[width=\linewidth]{img/linear_cv_predictions_humidity.png}
+\figcap{Reduced bias and error qualifies our sensor as "high-fidelity" under the stringent EPA guidelines that PurpleAir adheres to.}
 \end{card}
 
 \begin{card}{Web Dashboard}
