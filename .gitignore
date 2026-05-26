@@ -47,6 +47,10 @@ tools/sensa_tools.egg-info
 *.pdf
 # Exception: webapp assets that are genuine source files.
 !webapp/src/assets/hero.png
+# Exception: poster image sources (logos, schematics, screenshots used by poster.tex).
+!poster/img/*.png
+!poster/img/*.jpg
+!poster/img/*.jpeg
 
 # ── LaTeX build artefacts ────────────────────────────────────────────────────
 # Auxiliary files produced by pdflatex/beamer when compiling poster/poster.tex.
