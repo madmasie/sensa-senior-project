@@ -170,12 +170,9 @@ laboratory-grade awareness for everyday users.
     minimum width=12cm, minimum height=2.8cm, inner sep=6pt,
     font=\sffamily\bfseries\LARGE
   },
-  ai/.style={box, fill=cpsage, draw=cpsage},
-  alert/.style={box, fill=cpgold, draw=cpgold,
-                minimum width=11cm, minimum height=3.2cm},
   ext/.style={box, fill=cpcharcoal, draw=cpcharcoal,
               minimum width=11cm, minimum height=2.8cm},
-  flow/.style={-{Stealth[length=10mm,width=8mm]}, line width=4pt, draw=cpgold},
+  flow/.style={-{Stealth[length=10mm,width=8mm]}, line width=4pt, draw=cpgold}
 ]
 
 % Top row: Power (left) + SEN55 (right)
@@ -185,7 +182,7 @@ laboratory-grade awareness for everyday users.
 % Vertical pipeline below SEN55
 \node[box, below=2.0cm of sen]   (clean) {Clean Up Data\\\normalfont\normalsize Remove startup noise, Rolling Average};
 \node[box, below=of clean]       (feat)  {Feature Extraction\\\normalfont\normalsize Trends and statistics from recent data};
-\node[ai,  below=of feat]        (ai)    {Tiny AI Model\\\normalfont\normalsize Quantized CNN running on the ESP32-S3};
+\node[box,  below=of feat]        (ai)    {Tiny AI Model\\\normalfont\normalsize Quantized CNN running on the ESP32-S3};
 \node[box, below=of ai]          (out)   {Output\\\normalfont\normalsize Calibrated PM2.5};
 
 % ESP32 container around the on-device stages
@@ -194,7 +191,7 @@ laboratory-grade awareness for everyday users.
       inner xsep=0.9cm, inner ysep=0.7cm] (esp) {};
 
 % Bottom row: alerts + dashboard fed by output
-\node[alert, left=5.6cm of out]
+\node[ext, left=6.0cm of out]
       (alerts) {Haptic Alert\\\normalfont\normalsize Vibration motor\\ \normalfont\normalsize Piezo buzzer};
 \node[ext, minimum height=3.2cm, above=2.0cm of alerts]
       (dash)   {Dashboard \\\normalfont\normalsize BLE, WIFI app};
