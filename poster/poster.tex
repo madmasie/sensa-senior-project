@@ -7,12 +7,13 @@
 % =====================================================================
 \documentclass[final,t]{beamer}
 
-\usepackage[size=custom,width=121.92,height=91.44,scale=1.05]{beamerposter} % 48" x 36"
+\usepackage[size=custom,width=121.92,height=91.44,scale=1.25]{beamerposter} % 48" x 36"
 \usepackage[utf8]{inputenc}
 \usepackage{lmodern}
 \usepackage{microtype}
 \usepackage{graphicx}
 \usepackage{tikz}
+\usetikzlibrary{positioning, arrows.meta, fit}
 \usepackage{adjustbox}
 \usepackage{array,booktabs,tabularx}
 \usepackage{ragged2e}
@@ -34,8 +35,11 @@
 \setbeamercolor{itemize item}{fg=cpgreen}
 \setbeamercolor{itemize subitem}{fg=cpsage}
 
-\setbeamertemplate{itemize item}{\raisebox{0.15ex}{\rule{0.55em}{0.55em}}}
-\setbeamertemplate{itemize subitem}{\raisebox{0.25ex}{\textbullet}}
+\setbeamertemplate{itemize item}{\textcolor{cpgreen}{\textbullet}}
+\setbeamertemplate{itemize subitem}{\textcolor{cpsage}{\textendash}}
+% Belt-and-suspenders: also override via enumitem in case beamer template is suppressed
+\setlist[itemize,1]{label=\textcolor{cpgreen}{\textbullet}, leftmargin=1.2em, labelsep=0.5em}
+\setlist[itemize,2]{label=\textcolor{cpsage}{\textendash}, leftmargin=1.2em, labelsep=0.5em}
 \setbeamertemplate{navigation symbols}{}
 
 % Section header used inside each "card" --------------------------------
@@ -60,7 +64,7 @@
   \end{tikzpicture}\par
 }
 
-\newcommand{\figcap}[1]{\par\vspace{0.2em}{\color{cpcharcoal}\small\itshape Figure: #1}\par}
+\newcommand{\figcap}[1]{\par\vspace{0.2em}{\color{cpcharcoal}\large\itshape Figure: #1}\par}
 
 % =====================================================================
 %  Title bar (custom — replaces beamer's default headline)
@@ -81,7 +85,7 @@
         {\fontsize{82}{92}\selectfont\bfseries Wearable Air Quality Monitoring}\\[0.15em]
         {\fontsize{82}{92}\selectfont\bfseries System with Embedded AI}\\[0.5em]
         {\fontsize{34}{40}\selectfont Ryan Niemi \;\textbar\; Maddie Masiello \;\textbar\; Gulianna Corteguera}\\[0.15em]
-        {\color{cpgold}\fontsize{30}{34}\selectfont\itshape Advisor: Mohammad Ghamari \quad\textbullet\quad Cal Poly, Electrical Engineering}
+        {\color{cpgold}\fontsize{30}{34}\selectfont\itshape Advisor: Mohammad Ghamari \quad\textbullet\quad California Polytechnic, Electrical Engineering}
       \end{minipage}};
     % Right-side institution block — Cal Poly logo + department name
     \node[anchor=east,inner sep=0pt,text=white] at (\paperwidth-1.8cm,\headerheight/2){%
@@ -95,7 +99,7 @@
   \leavevmode
   \begin{beamercolorbox}[wd=\paperwidth,ht=1.4cm,dp=0.4cm,leftskip=2cm,rightskip=2cm]{}
     \color{cpcharcoal}\small
-    \textbf{Sensa} \textbullet\; Cal Poly EE Senior Project 2025--2026
+    \textbf{Sensa} \textbullet\; California Polytechnic Electrical Engineering Senior Project 2025--2026
   \end{beamercolorbox}
 }
 
@@ -114,8 +118,7 @@
 Most individuals live in areas where \textbf{accurate, real-time air-quality
 information is unavailable}. Existing wearable monitors are limited by:
 \begin{itemize}\setlength\itemsep{0.25em}
-  \item \textbf{Calibration drift} and cross-sensitivity in low-cost PM and VOC sensors
-  \item Dependence on \textbf{cloud recalibration}, raising latency and privacy concerns
+  \item Calibration drift and innacuracy in low-cost PM and VOC sensors
   \item Bulky form factors and \$300+ price points
 \end{itemize}
 \vspace{0.3em}
@@ -126,15 +129,15 @@ laboratory-grade awareness for everyday users.
 
 \begin{card}{Project Objectives}
 \begin{itemize}\setlength\itemsep{0.3em}
-  \item Measure PM\textsubscript{1}, PM\textsubscript{2.5}, PM\textsubscript{4},
+  \item Measure PM\textsubscript{2.5},
         PM\textsubscript{10}, VOC index, NO\textsubscript{x} index, temperature,
         and humidity in real time
   \item Run \textbf{embedded CNN calibration \& classification} entirely
-        on-device --- no cloud dependency
+        on-device
   \item Achieve \textbf{$\geq 12$~hour} battery life in a wearable
         (${<}\,3$~in\textsuperscript{2}) form factor
   \item Stay under a \textbf{\$100} bill-of-materials target
-  \item Validate against laboratory-grade reference equipment
+  \item Achieve accuracy similar to laboratory-grade reference equipment
 \end{itemize}
 \end{card}
 
@@ -154,7 +157,59 @@ laboratory-grade awareness for everyday users.
 
 \begin{card}{System Architecture}
 \centering
-\includegraphics[width=\linewidth]{img/sensa_sys_arch.png}
+\resizebox{\linewidth}{!}{%
+\begin{tikzpicture}[
+  font=\sffamily,
+  node distance=0.7cm and 0.5cm,
+  box/.style={
+    rounded corners=10pt, draw=cpgreen, thick,
+    fill=cpgreen, text=white, align=center,
+    minimum width=5.2cm, minimum height=3.2cm, inner sep=6pt,
+    font=\sffamily\bfseries\LARGE
+  },
+  ai/.style={box, fill=cpsage, draw=cpsage},
+  alert/.style={box, fill=cpgold, draw=cpgold},
+  ext/.style={box, fill=cpcharcoal, draw=cpcharcoal, minimum width=4.6cm},
+  flow/.style={->, very thick, draw=cpgold},
+]
+
+% Row 1 inside container: SEN55 -> Clean -> Store
+\node[box] (sen)   {SEN55 Sensor\\\normalfont\large PM1 / PM2.5 / PM4 / PM10\\ VOC, NO\textsubscript{x}\\ Temp, RH};
+\node[box, right=of sen]   (clean) {Clean Up Data\\\normalfont\large Remove startup noise\\ Smooth readings\\ Adjust for T / RH};
+\node[box, right=of clean] (store) {Store Recent Data\\\normalfont\large Rolling history of\\ recent readings};
+
+% Row 2 inside container (snake R-to-L): Output <- AI <- Features
+\node[box, below=1.6cm of sen]  (out)  {Output\\\normalfont\large Calibrated PM2.5\\ AQI category\\ GOOD $\rightarrow$ HAZARDOUS};
+\node[ai,  below=1.6cm of clean] (ai)   {Tiny AI Model\\\normalfont\large Quantized CNN\\ on the ESP32-S3};
+\node[box, below=1.6cm of store] (feat) {Feature Extraction\\\normalfont\large Trends and stats\\ from recent data};
+
+% External boxes
+\node[ext, left=of sen]   (pwr)    {Power System\\\normalfont\large USB-C charging\\ 5\,V / 3.3\,V rails};
+\node[alert, below=2.2cm of out]  (alerts) {On-Device Alerts\\\normalfont\large Vibration motor\\ Piezo buzzer\\ Severity pulses};
+\node[ext,   below=2.2cm of ai]   (dash)   {Dashboard \& BLE\\\normalfont\large BLE companion app\\ Serial monitor\\ Cloud sync};
+
+% Container around inside nodes only — header sits above
+\node[draw=cpgreen, ultra thick, rounded corners=16pt,
+      fit=(sen)(clean)(store)(feat)(ai)(out),
+      inner xsep=0.7cm, inner ysep=0.8cm] (esp) {};
+\node[anchor=south, text=cpgreen, yshift=0.25cm,
+      font=\sffamily\bfseries\Huge] at (esp.north) {ESP32-S3 On-Device Processing};
+
+% Data flow (snake): sen -> clean -> store -> down -> feat -> ai -> out
+\draw[flow] (sen)   -- (clean);
+\draw[flow] (clean) -- (store);
+\draw[flow] (store) -- (feat);
+\draw[flow] (feat)  -- (ai);
+\draw[flow] (ai)    -- (out);
+
+% Output fans out to both consumers (outside container)
+\draw[flow] (out)       -- (alerts);
+\draw[flow] (out.south) |- (dash.west);
+
+% Power feeds in from the left
+\draw[flow] (pwr.east)  -- (sen.west);
+\end{tikzpicture}%
+}
 \figcap{End-to-end data path. All calibration and classification run on
 the ESP32-S3; the cloud is used only for visualization and long-term storage.}
 \end{card}
@@ -175,9 +230,9 @@ research contribution of this project.
 \end{itemize}
 \vspace{0.3em}
 \centering
-\placeholder{14cm}{CNN architecture diagram \\(1D conv $\rightarrow$ depthwise $\rightarrow$ dense $\rightarrow$ softmax)}
-\figcap{Quantized 1D-CNN deployed on-device. Trained in TensorFlow,
-deployed via TFLite Micro.}
+\includegraphics[width=\linewidth]{img/fig_cnn_architecture.png}
+\figcap{CNN calibration uses transfer learning and physics informed AI to 
+incorporate humidity and temperature into PM predictions Quantized 1D-CNN deployed on-device.}
 \end{card}
 
 \begin{card}{Severity-Coded Alerts}
@@ -209,10 +264,6 @@ A 30-second cooldown prevents alert fatigue when air quality remains poor.
 
 \begin{card}{AI Analysis \& Insights}
 \centering
-\includegraphics[width=\linewidth]{img/fig_cnn_architecture.png}
-\figcap{CNN calibration uses transfer learning and physics informed AI to 
-incorporate humidity and temperature into PM predictions.}
-\vspace{0.5em}
 \includegraphics[width=\linewidth]{img/linear_cv_predictions_humidity.png}
 \figcap{Reduced bias and error qualifies our sensor as "high-fidelity" under the stringent EPA guidelines that PurpleAir adheres to.}
 \end{card}
