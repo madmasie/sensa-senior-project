@@ -176,8 +176,8 @@ laboratory-grade awareness for everyday users.
 ]
 
 % Top row: Power (left) + SEN55 (right)
-\node[box]                       (sen)   {SEN55 Sensor\\\normalfont\normalsize PM1 / PM2.5 / PM10\\ \normalfont\normalsize VOC, NO\textsubscript{x}, Temp, RH};
-\node[ext, minimum width=8cm, left=1.6cm of sen] (pwr) {Power System\\\normalfont\normalsize USB-C charging\\ \normalfont\normalsize 5\,V / 3.3\,V rails};
+\node[box]                       (sen)   {SEN55 Sensor\\\normalfont\normalsize PM2.5 / PM4 / PM10\\ \normalfont\normalsize VOC, NO\textsubscript{x}, Temp, RH};
+\node[ext, minimum width=8cm, left=4.9cm of sen] (pwr) {Power System\\\normalfont\normalsize USB-C charging\\ \normalfont\normalsize 5\,V / 3.3\,V rails};
 
 % Vertical pipeline below SEN55
 \node[box, below=2.0cm of sen]   (clean) {Clean Up Data\\\normalfont\normalsize Remove startup noise, Rolling Average};
@@ -195,6 +195,8 @@ laboratory-grade awareness for everyday users.
       (alerts) {Haptic Alert\\\normalfont\normalsize Vibration motor\\ \normalfont\normalsize Piezo buzzer};
 \node[ext, minimum height=3.2cm, above=2.0cm of alerts]
       (dash)   {Dashboard \\\normalfont\normalsize BLE, WIFI app};
+\node[ext, minimum height=3.2cm, above=2.0cm of dash]
+      (idle)   {Power Saver \\\normalfont\normalsize sub-Nyquist sampling \\\normalfont\normalsize Low Power Mode};
 
 % Power feeds SEN55, then pipeline
 \draw[flow] (pwr)   -- (sen);
@@ -206,6 +208,8 @@ laboratory-grade awareness for everyday users.
 % Output forks down to alerts and dashboard
 \draw[flow] (out.west) -- (alerts.east);
 \draw[flow] (alerts.north) -- (dash.south);
+\draw[flow] (dash.north) -- (idle.south);
+\draw[flow] (idle.north) -- (pwr.south);
 \end{tikzpicture}%
 }
 \figcap{End-to-end data path. All calibration and classification run on
@@ -219,8 +223,7 @@ research contribution of this project.
 \vspace{0.3em}
 \begin{itemize}\setlength\itemsep{0.25em}
   \item \textbf{Base model} trained on AQS reference-grade station data
-  \item \textbf{Transfer learning} fine-tunes the head on local Sensa
-        co-location data
+  \item \textbf{Transfer learning} fine-tunes the local Sensa data with a PurpleAir reference 
 \end{itemize}
 \vspace{0.3em}
 \centering
@@ -258,13 +261,15 @@ When the on-device classifier flags poor air quality, the haptic motor and piezo
 \begin{card}{AI Analysis \& Insights}
 \centering
 \includegraphics[width=\linewidth]{img/linear_cv_predictions_humidity.png}
+\justifying\vspace{0.3em}
+\includegraphics[width=\linewidth]{img/predictions.png}
+\centering
 \figcap{Reduced bias and error qualifies our sensor as "high-fidelity" under the stringent EPA guidelines that PurpleAir adheres to.}
 \end{card}
 
 \begin{card}{Web Dashboard}
 \centering
 \includegraphics[width=\linewidth]{img/webappdemo.png}
-\justifying\vspace{0.3em}
 \begin{itemize}\setlength\itemsep{0.2em}
   \item Live readings stream over BLE, wifi, and UART
   \item Historical trends, exposure summaries, and exportable CSV
@@ -275,7 +280,6 @@ When the on-device classifier flags poor air quality, the haptic motor and piezo
 \begin{itemize}\setlength\itemsep{0.3em}
   \item Embedded CNN calibration reduces PM\textsubscript{2.5} RMSE vs. raw SEN55
         output
-  \item Full firmware fits in ${<}\,1$\,MB; CNN inference under 15\,ms
   \item Battery life meets the 12-hour target on a single LiPo cell
 \end{itemize}
 \vspace{0.3em}
