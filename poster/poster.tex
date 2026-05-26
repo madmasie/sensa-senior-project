@@ -42,6 +42,9 @@
 \setlist[itemize,2]{label=\textcolor{cpsage}{\textendash}, leftmargin=1.2em, labelsep=0.5em}
 \setbeamertemplate{navigation symbols}{}
 
+% Equal left/right frame padding so columns aren't pushed against the right edge
+\setbeamersize{text margin left=2cm, text margin right=2cm}
+
 % Section header used inside each "card" --------------------------------
 \newcommand{\sectionhead}[1]{%
   {\color{cpgreen}\bfseries\fontsize{40}{46}\selectfont #1}\\[0.1em]
@@ -64,7 +67,7 @@
   \end{tikzpicture}\par
 }
 
-\newcommand{\figcap}[1]{\par\vspace{0.2em}{\color{cpcharcoal}\large\itshape Figure: #1}\par}
+\newcommand{\figcap}[1]{\par\vspace{0.2em}{\color{cpcharcoal}\normalsize\itshape Figure: #1}\par}
 
 % =====================================================================
 %  Title bar (custom — replaces beamer's default headline)
@@ -129,8 +132,8 @@ laboratory-grade awareness for everyday users.
 
 \begin{card}{Project Objectives}
 \begin{itemize}\setlength\itemsep{0.3em}
-  \item Measure PM\textsubscript{2.5},
-        PM\textsubscript{10}, VOC index, NO\textsubscript{x} index, temperature,
+  \item Measure PM\textsubscript{2.5},  PM\textsubscript{4}
+         PM\textsubscript{10}, VOC, NO\textsubscript{x}, temperature,
         and humidity in real time
   \item Run \textbf{embedded CNN calibration \& classification} entirely
         on-device
@@ -160,54 +163,52 @@ laboratory-grade awareness for everyday users.
 \resizebox{\linewidth}{!}{%
 \begin{tikzpicture}[
   font=\sffamily,
-  node distance=0.7cm and 0.5cm,
+  node distance=0.9cm,
   box/.style={
     rounded corners=10pt, draw=cpgreen, thick,
     fill=cpgreen, text=white, align=center,
-    minimum width=5.2cm, minimum height=3.2cm, inner sep=6pt,
+    minimum width=12cm, minimum height=2.8cm, inner sep=6pt,
     font=\sffamily\bfseries\LARGE
   },
   ai/.style={box, fill=cpsage, draw=cpsage},
-  alert/.style={box, fill=cpgold, draw=cpgold},
-  ext/.style={box, fill=cpcharcoal, draw=cpcharcoal, minimum width=4.6cm},
-  flow/.style={->, very thick, draw=cpgold},
+  alert/.style={box, fill=cpgold, draw=cpgold,
+                minimum width=11cm, minimum height=3.2cm},
+  ext/.style={box, fill=cpcharcoal, draw=cpcharcoal,
+              minimum width=11cm, minimum height=2.8cm},
+  flow/.style={-{Stealth[length=10mm,width=8mm]}, line width=4pt, draw=cpgold},
 ]
 
-% Row 1 inside container: SEN55 -> Clean -> Store
-\node[box] (sen)   {SEN55 Sensor\\\normalfont\large PM1 / PM2.5 / PM4 / PM10\\ VOC, NO\textsubscript{x}\\ Temp, RH};
-\node[box, right=of sen]   (clean) {Clean Up Data\\\normalfont\large Remove startup noise\\ Smooth readings\\ Adjust for T / RH};
-\node[box, right=of clean] (store) {Store Recent Data\\\normalfont\large Rolling history of\\ recent readings};
+% Top row: Power (left) + SEN55 (right)
+\node[box]                       (sen)   {SEN55 Sensor\\\normalfont\normalsize PM1 / PM2.5 / PM10\\ \normalfont\normalsize VOC, NO\textsubscript{x}, Temp, RH};
+\node[ext, minimum width=8cm, left=1.6cm of sen] (pwr) {Power System\\\normalfont\normalsize USB-C charging\\ \normalfont\normalsize 5\,V / 3.3\,V rails};
 
-% Row 2 inside container (snake R-to-L): Output <- AI <- Features
-\node[box, below=1.6cm of sen]  (out)  {Output\\\normalfont\large Calibrated PM2.5\\ AQI category\\ GOOD $\rightarrow$ HAZARDOUS};
-\node[ai,  below=1.6cm of clean] (ai)   {Tiny AI Model\\\normalfont\large Quantized CNN\\ on the ESP32-S3};
-\node[box, below=1.6cm of store] (feat) {Feature Extraction\\\normalfont\large Trends and stats\\ from recent data};
+% Vertical pipeline below SEN55
+\node[box, below=2.0cm of sen]   (clean) {Clean Up Data\\\normalfont\normalsize Remove startup noise, Rolling Average};
+\node[box, below=of clean]       (feat)  {Feature Extraction\\\normalfont\normalsize Trends and statistics from recent data};
+\node[ai,  below=of feat]        (ai)    {Tiny AI Model\\\normalfont\normalsize Quantized CNN running on the ESP32-S3};
+\node[box, below=of ai]          (out)   {Output\\\normalfont\normalsize Calibrated PM2.5};
 
-% External boxes
-\node[ext, left=of sen]   (pwr)    {Power System\\\normalfont\large USB-C charging\\ 5\,V / 3.3\,V rails};
-\node[alert, below=2.2cm of out]  (alerts) {On-Device Alerts\\\normalfont\large Vibration motor\\ Piezo buzzer\\ Severity pulses};
-\node[ext,   below=2.2cm of ai]   (dash)   {Dashboard \& BLE\\\normalfont\large BLE companion app\\ Serial monitor\\ Cloud sync};
-
-% Container around inside nodes only — header sits above
+% ESP32 container around the on-device stages
 \node[draw=cpgreen, ultra thick, rounded corners=16pt,
-      fit=(sen)(clean)(store)(feat)(ai)(out),
-      inner xsep=0.7cm, inner ysep=0.8cm] (esp) {};
-\node[anchor=south, text=cpgreen, yshift=0.25cm,
-      font=\sffamily\bfseries\Huge] at (esp.north) {ESP32-S3 On-Device Processing};
+      fit=(clean)(feat)(ai)(out),
+      inner xsep=0.9cm, inner ysep=0.7cm] (esp) {};
 
-% Data flow (snake): sen -> clean -> store -> down -> feat -> ai -> out
+% Bottom row: alerts + dashboard fed by output
+\node[alert, left=5.6cm of out]
+      (alerts) {Haptic Alert\\\normalfont\normalsize Vibration motor\\ \normalfont\normalsize Piezo buzzer};
+\node[ext, minimum height=3.2cm, above=2.0cm of alerts]
+      (dash)   {Dashboard \\\normalfont\normalsize BLE, WIFI app};
+
+% Power feeds SEN55, then pipeline
+\draw[flow] (pwr)   -- (sen);
 \draw[flow] (sen)   -- (clean);
-\draw[flow] (clean) -- (store);
-\draw[flow] (store) -- (feat);
+\draw[flow] (clean) -- (feat);
 \draw[flow] (feat)  -- (ai);
 \draw[flow] (ai)    -- (out);
 
-% Output fans out to both consumers (outside container)
-\draw[flow] (out)       -- (alerts);
-\draw[flow] (out.south) |- (dash.west);
-
-% Power feeds in from the left
-\draw[flow] (pwr.east)  -- (sen.west);
+% Output forks down to alerts and dashboard
+\draw[flow] (out.west) -- (alerts.east);
+\draw[flow] (alerts.north) -- (dash.south);
 \end{tikzpicture}%
 }
 \figcap{End-to-end data path. All calibration and classification run on
@@ -223,24 +224,19 @@ research contribution of this project.
   \item \textbf{Base model} trained on AQS reference-grade station data
   \item \textbf{Transfer learning} fine-tunes the head on local Sensa
         co-location data
-  \item \textbf{Post-training int8 quantization} via TFLite Micro --- the model
-        fits in ${<}\,100$\,KB of flash and runs in ${<}\,15$\,ms / inference
-  \item Inference loop: \emph{SEN55 read $\rightarrow$ pre-process $\rightarrow$
-        ring buffer $\rightarrow$ TFLite Micro $\rightarrow$ class + corrected PM}
 \end{itemize}
 \vspace{0.3em}
 \centering
 \includegraphics[width=\linewidth]{img/fig_cnn_architecture.png}
 \figcap{CNN calibration uses transfer learning and physics informed AI to 
-incorporate humidity and temperature into PM predictions Quantized 1D-CNN deployed on-device.}
+incorporate humidity and temperature into PM predictions.}
 \end{card}
 
 \begin{card}{Severity-Coded Alerts}
-When the on-device classifier flags poor air quality, the haptic motor and
-piezo buzzer fire in a pattern that maps directly to AQI severity:
-\vspace{0.3em}
+\begin{wraptable}{r}{0.45\linewidth}
+\vspace{-1.0em}
+\setlength{\tabcolsep}{1.0em}\renewcommand{\arraystretch}{1.1}
 \centering
-\setlength{\tabcolsep}{1.0em}\renewcommand{\arraystretch}{1.25}
 {\small
 \begin{tabular}{lc}
 \toprule
@@ -251,8 +247,8 @@ VERY UNHEALTHY & 2 \\
 HAZARDOUS & 3 \\
 \bottomrule
 \end{tabular}}
-\justifying\vspace{0.4em}
-A 30-second cooldown prevents alert fatigue when air quality remains poor.
+\end{wraptable}
+When the on-device classifier flags poor air quality, the haptic motor and piezo buzzer fire in a pattern that maps directly to AQI severity. A 30-second cooldown prevents alert fatigue when air quality remains poor.
 \end{card}
 
 \end{column}
@@ -271,29 +267,25 @@ A 30-second cooldown prevents alert fatigue when air quality remains poor.
 \begin{card}{Web Dashboard}
 \centering
 \includegraphics[width=\linewidth]{img/webappdemo.png}
-\figcap{React / FastAPI dashboard renders the device's already-classified
-output --- the AI runs on the wearable, not the server.}
 \justifying\vspace{0.3em}
 \begin{itemize}\setlength\itemsep{0.2em}
-  \item Live readings stream over BLE $\rightarrow$ companion app $\rightarrow$ cloud
-  \item Historical trends, exposure summaries, exportable CSV
-  \item No raw PII --- only sensor data is uploaded
+  \item Live readings stream over BLE, wifi, and UART
+  \item Historical trends, exposure summaries, and exportable CSV
 \end{itemize}
 \end{card}
 
 \begin{card}{Results \& Future Work}
 \begin{itemize}\setlength\itemsep{0.3em}
   \item Embedded CNN calibration reduces PM\textsubscript{2.5} RMSE vs. raw SEN55
-        output during co-location with reference equipment
+        output
   \item Full firmware fits in ${<}\,1$\,MB; CNN inference under 15\,ms
   \item Battery life meets the 12-hour target on a single LiPo cell
 \end{itemize}
 \vspace{0.3em}
 \textbf{Next steps:}
 \begin{itemize}\setlength\itemsep{0.2em}
-  \item Extend transfer-learning pipeline to per-user adaptation
+  \item Integrate built-in display screen 
   \item Add NO\textsubscript{x} / VOC-specific calibration heads
-  \item Long-duration field deployment (${>}\,30$ days)
 \end{itemize}
 \end{card}
 
